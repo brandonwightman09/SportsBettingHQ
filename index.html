@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16140f">
+<title>Raya HQ — Scoreboard</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Raya HQ">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Saira+Condensed:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+:root{
+  --bg:oklch(0.165 0.012 72);--card:oklch(0.205 0.013 74);--tile:oklch(0.150 0.011 72);
+  --ink:oklch(0.95 0.012 88);--mute:oklch(0.66 0.012 82);--faint:oklch(0.52 0.010 80);
+  --line:oklch(0.30 0.009 76);--acc:oklch(0.80 0.105 86);--acc-d:oklch(0.62 0.085 82);
+  --pos:oklch(0.76 0.10 152);--neg:oklch(0.72 0.13 34);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:oklch(0.12 0.008 72);}
+body{font-family:'Hanken Grotesk',system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex;justify-content:center;}
+.scb{width:100%;max-width:446px;min-height:100vh;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;padding:max(26px,env(safe-area-inset-top)) 26px 22px;}
+.auth{margin:14vh auto 0;text-align:center;max-width:340px}
+.auth .mark{font-family:'Saira Condensed',sans-serif;font-weight:800;font-size:50px;letter-spacing:.04em;color:var(--ink);line-height:.9;text-transform:uppercase}
+.auth .mark i{font-style:normal;color:var(--acc)}
+.auth .tag{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);margin-top:8px}
+.auth p{color:var(--mute);font-size:14px;margin:22px 0 18px;line-height:1.5}
+.auth input{width:100%;background:var(--tile);border:1px solid var(--line);border-radius:10px;padding:13px 14px;color:var(--ink);font-size:15px;font-family:inherit;outline:none}
+.auth input:focus{border-color:var(--acc-d)}
+.auth button{width:100%;margin-top:11px;background:var(--acc);color:var(--bg);border:none;border-radius:10px;padding:13px;font-family:'Saira Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.auth button:disabled{opacity:.5;cursor:default}
+.auth .msg{margin-top:16px;font-size:13px;min-height:18px;line-height:1.45}
+.auth .msg.ok{color:var(--pos)}.auth .msg.err{color:var(--neg)}
+.loading{margin:auto;color:var(--mute);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+.scb-hdr{display:flex;align-items:center;gap:13px;padding-bottom:16px;margin-bottom:18px;border-bottom:2px solid var(--line);position:relative}
+.scb-hdr::after{content:'';position:absolute;left:0;bottom:-2px;width:84px;height:2px;background:var(--acc)}
+.scb-bars{display:flex;gap:3px;align-items:center}
+.scb-bars i{width:5px;height:26px;background:var(--acc);border-radius:1px;transform:skewX(-12deg)}
+.scb-bars i:nth-child(2){height:20px;opacity:.6}.scb-bars i:nth-child(3){height:14px;opacity:.35}
+.scb-logo{font-family:'Saira Condensed',sans-serif;font-weight:800;font-size:34px;letter-spacing:.04em;line-height:.9;text-transform:uppercase}
+.scb-logo i{font-style:normal;color:var(--acc)}
+.scb-meta{margin-left:auto;text-align:right;line-height:1.35}
+.scb-meta b{display:block;font-family:'Saira Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);white-space:nowrap;line-height:1.2}
+.scb-meta span{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.scb-through{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.scb-through::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--acc);flex:0 0 auto}
+.scb-through b{color:var(--mute);font-weight:600}
+.scb-list{display:flex;flex-direction:column;gap:11px}
+.tier{display:grid;grid-template-columns:58px 1fr;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;position:relative}
+.tier-rail{background:linear-gradient(160deg,var(--card),var(--tile));position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--line);gap:3px}
+.tier-rail::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--acc)}
+.tier-rail b{font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:700;letter-spacing:.18em;color:var(--faint)}
+.tier-rail span{font-family:'Saira Condensed',sans-serif;font-weight:800;font-size:34px;line-height:.8;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.tier-rail span.two{font-size:26px}.tier-rail span.sum{font-size:34px;color:var(--acc)}
+.tier-body{padding:13px 15px 13px;min-width:0}
+.tier-head{display:flex;align-items:baseline;gap:9px;margin-bottom:11px}
+.tier-name{font-family:'Saira Condensed',sans-serif;font-weight:700;font-size:23px;line-height:.98;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;flex:0 0 auto}
+.tier-desc{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-left:auto}
+.cume{display:grid;grid-template-columns:1.05fr 1.2fr 1fr .75fr;column-gap:12px;align-items:start;padding:11px 0 12px;border-top:1px solid var(--line)}
+.stat{display:flex;flex-direction:column;gap:3px;min-width:0}
+.stat .lab{font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.stat .val{font-family:'Saira Condensed',sans-serif;font-weight:800;font-size:25px;line-height:.92;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:.005em;white-space:nowrap}
+.stat .val i{font-style:normal;font-size:15px;color:var(--mute);margin-left:1px}
+.val.pos{color:var(--pos)}.val.pos i{color:color-mix(in oklch,var(--pos) 70%,var(--mute))}
+.val.neg{color:var(--neg)}.val.neg i{color:color-mix(in oklch,var(--neg) 70%,var(--mute))}
+.val.mut{color:var(--mute)}
+.stat .be{font-family:'JetBrains Mono',monospace;font-size:8.5px;letter-spacing:.04em;color:var(--faint)}
+.stat .be.clear{color:var(--pos)}.stat .be.short{color:var(--neg)}
+.stat .pend{font-family:'JetBrains Mono',monospace;font-size:8.5px;letter-spacing:.04em;color:var(--faint)}
+.stat .pend.live{color:var(--acc-d)}
+.last{display:flex;align-items:center;gap:8px;padding-top:10px;border-top:1px solid var(--line);font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);letter-spacing:.02em;font-variant-numeric:tabular-nums;flex-wrap:wrap}
+.last .tag{font-size:8.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);border:1px solid var(--line);border-radius:4px;padding:2px 6px}
+.last .sep{color:var(--line)}.last b{color:var(--ink);font-weight:600}
+.last .pos{color:var(--pos);font-weight:600}.last .neg{color:var(--neg);font-weight:600}
+.ledger{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-top:11px}
+.ledger-h{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px}
+.ledger-h b{font-family:'Saira Condensed',sans-serif;font-weight:700;font-size:16px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink)}
+.ledger-h span{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.lrow{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:13px}
+.lrow+.lrow{border-top:1px solid var(--line)}
+.lres{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.lres.win{background:var(--pos)}.lres.loss{background:var(--neg)}.lres.push{background:var(--faint)}.lres.pending{background:transparent;border:1px solid var(--faint)}
+.lname{font-family:'Saira Condensed',sans-serif;font-weight:700;font-size:15px;text-transform:uppercase;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ltag{font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:.08em;color:var(--acc-d);border:1px solid var(--line);border-radius:3px;padding:1px 4px;flex:0 0 auto}
+.lpick{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);font-variant-numeric:tabular-nums;flex:0 0 auto;width:46px;text-align:right}
+.lk{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--faint);width:46px;text-align:right;flex:0 0 auto}
+.lu{font-family:'Saira Condensed',sans-serif;font-weight:800;font-size:15px;font-variant-numeric:tabular-nums;width:50px;text-align:right;flex:0 0 auto}
+.lu.pos{color:var(--pos)}.lu.neg{color:var(--neg)}.lu.flat{color:var(--faint)}
+.note{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint);line-height:1.5;margin:0 2px 11px;letter-spacing:.02em}
+.empty{background:var(--card);border:1px solid var(--line);border-radius:14px;color:var(--mute);text-align:center;padding:36px 22px;line-height:1.5}
+.empty b{color:var(--ink);font-family:'Saira Condensed',sans-serif;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px;font-size:18px}
+.scb-foot{margin-top:18px;padding-top:13px;border-top:2px solid var(--line);font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);line-height:1.7}
+.scb-foot b{color:var(--acc-d);font-weight:600}
+.scb-foot .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.scb-foot a{color:var(--faint);text-decoration:none;cursor:pointer}
+</style>
+</head>
+<body>
+<main class="scb" id="app"><div class="loading">Loading…</div></main>
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+const SUPABASE_URL  = 'https://zuijmbyrwzixnhcaqgpl.supabase.co';
+const SUPABASE_ANON_KEY = 'PASTE_YOUR_PUBLISHABLE_ANON_KEY_HERE';
+const OWNER_EMAIL = 'brandonwightman09@gmail.com';
+const BREAKEVEN = 52.4;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const app = document.getElementById('app');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const u2 = x => (x>=0?'+':'\u2212') + Math.abs(Math.round(x*100)/100).toFixed(2);
+const cls = x => x>0?'pos':x<0?'neg':'mut';
+const dash = '\u2013';
+function authScreen(msg, c){
+  app.innerHTML = `<div class="auth">
+    <div class="mark">Raya <i>HQ</i></div>
+    <div class="tag">Grading Scoreboard \u00b7 Private</div>
+    <p>Sign in with your owner email. A one-tap link will be sent \u2014 no password.</p>
+    <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" />
+    <button id="send">Send sign-in link</button>
+    <div class="msg ${c||''}" id="msg">${msg||''}</div></div>`;
+  const email=document.getElementById('email'), btn=document.getElementById('send'), out=document.getElementById('msg');
+  btn.onclick=async()=>{
+    const a=email.value.trim();
+    if(!a||!a.includes('@')){out.className='msg err';out.textContent='Enter a valid email.';return;}
+    btn.disabled=true;out.className='msg';out.textContent='Sending\u2026';
+    const {error}=await sb.auth.signInWithOtp({email:a,options:{emailRedirectTo:window.location.origin+window.location.pathname}});
+    if(error){out.className='msg err';out.textContent=error.message;btn.disabled=false;}
+    else{out.className='msg ok';out.textContent='Check your email for the sign-in link.';}
+  };
+  email.addEventListener('keydown',e=>{if(e.key==='Enter')btn.click();});
+}
+function statsFor(rows){
+  const g=rows.filter(r=>r.result==='win'||r.result==='loss'||r.result==='push');
+  const w=g.filter(r=>r.result==='win').length, l=g.filter(r=>r.result==='loss').length, p=g.filter(r=>r.result==='push').length;
+  const units=g.reduce((s,r)=>s+(+r.profit_units||0),0);
+  const pending=rows.filter(r=>!r.result).length;
+  const hit=(w+l)?100*w/(w+l):null;
+  return {w,l,p,units,pending,hit,graded:g.length};
+}
+function tierEl(railHTML, name, desc, rows, lastDay){
+  const c=statsFor(rows);
+  const n=lastDay?statsFor(rows.filter(r=>r.slate_date===lastDay)):null;
+  const rec = c.graded ? `${c.w}${dash}${c.l}${c.p?`${dash}${c.p}p`:''}` : `0${dash}0`;
+  const hitVal = c.hit==null ? `<span class="val mut">${dash}</span>`
+    : `<span class="val ${c.hit>=BREAKEVEN?'pos':'neg'}">${c.hit.toFixed(1)}<i>%</i></span>`;
+  const beCls = c.hit==null ? '' : (c.hit>=BREAKEVEN?'clear':'short');
+  const netVal = c.graded ? `<span class="val ${cls(c.units)}">${u2(c.units)}<i>u</i></span>` : `<span class="val mut">${dash}</span>`;
+  const pendCls = c.pending ? 'live' : '';
+  const pendLab = c.pending ? 'awaiting' : 'graded';
+  const lastHTML = (n && n.graded) ? `<div class="last"><span class="tag">Last night</span>
+      <b>${n.w}${dash}${n.l}</b><span class="sep">\u00b7</span>${n.hit!=null?n.hit.toFixed(1)+'% hit':'\u2014'}<span class="sep">\u00b7</span>
+      <span class="${cls(n.units)==='mut'?'':cls(n.units)}">${u2(n.units)}u</span></div>` : '';
+  return `<section class="tier">
+    <div class="tier-rail">${railHTML}</div>
+    <div class="tier-body">
+      <div class="tier-head"><div class="tier-name">${name}</div><div class="tier-desc">${desc}</div></div>
+      <div class="cume">
+        <div class="stat"><span class="lab">Record</span><span class="val">${rec}</span></div>
+        <div class="stat"><span class="lab">Hit&nbsp;%</span>${hitVal}<span class="be ${beCls}">need ${BREAKEVEN}%</span></div>
+        <div class="stat"><span class="lab">Net</span>${netVal}</div>
+        <div class="stat"><span class="lab">Pending</span><span class="val mut">${c.pending}</span><span class="pend ${pendCls}">${pendLab}</span></div>
+      </div>
+      ${lastHTML}
+    </div></section>`;
+}
+function ledger(rows){
+  const sorted=[...rows].sort((a,b)=>(b.slate_date||'').localeCompare(a.slate_date||'')||(a.tier_rank||99)-(b.tier_rank||99));
+  const show=sorted.slice(0,20);
+  if(!show.length) return '';
+  const row=r=>{
+    const res=r.result||'pending';
+    const tag=r.in_top5?'T5':r.in_top10?'T10':'\u00b7';
+    const side=(r.bet_side||'').charAt(0).toUpperCase();
+    const k=r.actual_k==null?`<span class="lk">${dash} K</span>`:`<span class="lk">${r.actual_k} K</span>`;
+    const u=r.profit_units==null?`<span class="lu flat">\u00b7</span>`:`<span class="lu ${cls(+r.profit_units)==='mut'?'flat':cls(+r.profit_units)}">${u2(+r.profit_units)}</span>`;
+    return `<div class="lrow"><span class="lres ${res}"></span><span class="lname">${esc(r.pitcher_name)}</span>
+      <span class="ltag">${tag}</span><span class="lpick">${side}${r.anchor_line}</span>${k}${u}</div>`;
+  };
+  return `<div class="ledger"><div class="ledger-h"><b>Recent Results</b><span>last ${show.length}</span></div>${show.map(row).join('')}</div>`;
+}
+async function board(){
+  app.innerHTML=`<div class="loading">Loading scoreboard\u2026</div>`;
+  const {data:{session}}=await sb.auth.getSession();
+  if(session && session.user.email!==OWNER_EMAIL){ await sb.auth.signOut(); authScreen('That account isn\u2019t the owner. This app is private.','err'); return; }
+  const {data,error}=await sb.from('mlb_k_brief_log').select('*');
+  if(error){ app.innerHTML=`<div class="empty"><b>Couldn\u2019t load</b>${esc(error.message)}</div>`; return; }
+  const rows=data||[];
+  const graded=rows.filter(r=>r.result);
+  const lastDay=graded.length?graded.map(r=>r.slate_date).sort().slice(-1)[0]:null;
+  const through=lastDay||'no results yet';
+  const tiers = `<div class="scb-list">
+    ${tierEl('<b>TOP</b><span>5</span>','Top 5','Morning brief',rows.filter(r=>r.in_top5),lastDay)}
+    ${tierEl('<b>TOP</b><span class="two">10</span>','Top 10','Next 5 ranked',rows.filter(r=>r.in_top10),lastDay)}
+    ${tierEl('<b>ALL</b><span class="sum">\u03A3</span>','Overall','Every qualifying pick',rows,lastDay)}
+  </div>`;
+  let mid;
+  if(!rows.length){
+    mid=`<div class="empty"><b>No picks logged yet</b>The morning brief begins logging on its next run. Once games settle, the scoreboard fills in here.</div>`;
+  } else if(!graded.length){
+    mid=`<div class="note">${rows.length} picks logged \u00b7 0 graded \u2014 records appear once the grader settles them against actual strikeouts.</div>${tiers}${ledger(rows)}`;
+  } else {
+    mid=`${tiers}${ledger(rows)}`;
+  }
+  app.innerHTML=`
+    <header class="scb-hdr">
+      <div class="scb-bars"><i></i><i></i><i></i></div>
+      <div class="scb-logo">Raya <i>HQ</i></div>
+      <div class="scb-meta"><b>Evening Scoreboard</b><span>Strikeout Grading</span></div>
+    </header>
+    <div class="scb-through">Results current through <b>${esc(through)}</b></div>
+    ${mid}
+    <footer class="scb-foot">
+      <div class="row"><span>Net units \u00b7 flat 1u \u00b7 best-book price</span><span>Model <b>linreg_k_v1</b></span></div>
+      <div class="row"><span>Breakeven <b>${BREAKEVEN}%</b> at \u2212110 juice</span><span><a id="signout">Sign out</a></span></div>
+    </footer>`;
+  const so=document.getElementById('signout'); if(so) so.onclick=async()=>{await sb.auth.signOut();route();};
+}
+async function route(){ const {data:{session}}=await sb.auth.getSession(); if(session) board(); else authScreen(); }
+sb.auth.onAuthStateChange((_e,s)=>{ if(s) board(); });
+route();
+if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
+</script>
+</body>
+</html>
