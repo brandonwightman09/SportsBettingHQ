@@ -29,6 +29,9 @@ body{font-family:'Hanken Grotesk',system-ui,sans-serif;-webkit-font-smoothing:an
 .auth p{color:var(--mute);font-size:14px;margin:22px 0 18px;line-height:1.5}
 .auth input{width:100%;background:var(--tile);border:1px solid var(--line);border-radius:10px;padding:13px 14px;color:var(--ink);font-size:15px;font-family:inherit;outline:none}
 .auth input:focus{border-color:var(--acc-d)}
+.auth input+input{margin-top:9px}
+.auth .switch{margin-top:15px;font-size:13px;color:var(--mute)}
+.auth .switch a{color:var(--acc-d);cursor:pointer;text-decoration:none;font-weight:600}
 .auth button{width:100%;margin-top:11px;background:var(--acc);color:var(--bg);border:none;border-radius:10px;padding:13px;font-family:'Saira Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
 .auth button:disabled{opacity:.5;cursor:default}
 .auth .msg{margin-top:16px;font-size:13px;min-height:18px;line-height:1.45}
@@ -126,20 +129,40 @@ function authScreen(msg, c){
   app.innerHTML = `<div class="auth">
     <div class="mark">Raya <i>HQ</i></div>
     <div class="tag">Grading Scoreboard \u00b7 Private</div>
-    <p>Sign in with your owner email. A one-tap link will be sent \u2014 no password.</p>
-    <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com" />
-    <button id="send">Send sign-in link</button>
+    <p id="sub">Sign in with your owner email and password.</p>
+    <input id="email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" placeholder="email" />
+    <input id="pass" type="password" autocomplete="current-password" placeholder="password" />
+    <button id="go">Sign in</button>
+    <div class="switch"><a id="toggle">First time? Set up owner account</a></div>
     <div class="msg ${c||''}" id="msg">${msg||''}</div></div>`;
-  const email=document.getElementById('email'), btn=document.getElementById('send'), out=document.getElementById('msg');
-  btn.onclick=async()=>{
-    const a=email.value.trim();
-    if(!a||!a.includes('@')){out.className='msg err';out.textContent='Enter a valid email.';return;}
-    btn.disabled=true;out.className='msg';out.textContent='Sending\u2026';
-    const {error}=await sb.auth.signInWithOtp({email:a,options:{emailRedirectTo:window.location.origin+window.location.pathname}});
-    if(error){out.className='msg err';out.textContent=error.message;btn.disabled=false;}
-    else{out.className='msg ok';out.textContent='Check your email for the sign-in link.';}
+  const email=document.getElementById('email'), pass=document.getElementById('pass'),
+        btn=document.getElementById('go'), out=document.getElementById('msg'),
+        tog=document.getElementById('toggle'), sub=document.getElementById('sub');
+  let mode='signin';
+  tog.onclick=()=>{
+    mode = mode==='signin' ? 'signup' : 'signin';
+    btn.textContent = mode==='signin' ? 'Sign in' : 'Create account';
+    tog.textContent = mode==='signin' ? 'First time? Set up owner account' : 'Back to sign in';
+    sub.textContent = mode==='signin' ? 'Sign in with your owner email and password.'
+                                      : 'Set a password for your owner email.';
+    out.textContent=''; out.className='msg';
   };
-  email.addEventListener('keydown',e=>{if(e.key==='Enter')btn.click();});
+  btn.onclick=async()=>{
+    const a=email.value.trim(), p=pass.value;
+    if(!a||!a.includes('@')){out.className='msg err';out.textContent='Enter a valid email.';return;}
+    if(!p||p.length<6){out.className='msg err';out.textContent='Password must be at least 6 characters.';return;}
+    btn.disabled=true;out.className='msg';out.textContent = mode==='signup'?'Creating\u2026':'Signing in\u2026';
+    const {error} = mode==='signup'
+      ? await sb.auth.signUp({email:a,password:p})
+      : await sb.auth.signInWithPassword({email:a,password:p});
+    if(error){
+      out.className='msg err';
+      out.textContent = /invalid login/i.test(error.message) ? 'Wrong email or password.' : error.message;
+      btn.disabled=false;
+    }
+    // success -> onAuthStateChange -> board()
+  };
+  pass.addEventListener('keydown',e=>{if(e.key==='Enter')btn.click();});
 }
 function statsFor(rows){
   const g=rows.filter(r=>r.result==='win'||r.result==='loss'||r.result==='push');
