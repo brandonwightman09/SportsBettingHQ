@@ -44,6 +44,13 @@ body{font-family:'Hanken Grotesk',system-ui,sans-serif;-webkit-font-smoothing:an
 .scb-meta{margin-left:auto;text-align:right;line-height:1.35}
 .scb-meta b{display:block;font-family:'Saira Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);white-space:nowrap;line-height:1.2}
 .scb-meta span{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+/* ── tabs (added) ── */
+.tabs{display:flex;gap:7px;margin-bottom:14px}
+.tab{flex:1;text-align:center;background:var(--tile);border:1px solid var(--line);border-radius:11px;padding:10px;font-family:'Saira Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:.07em;text-transform:uppercase;color:var(--mute);cursor:pointer}
+.tab.on{background:var(--acc);color:var(--bg);border-color:var(--acc)}
+.subtabs{display:flex;gap:7px;margin-bottom:14px}
+.subtab{flex:1;text-align:center;background:transparent;border:1px solid var(--line);border-radius:9px;padding:7px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);cursor:pointer}
+.subtab.on{border-color:var(--acc-d);color:var(--acc)}
 .scb-through{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:16px;display:flex;align-items:center;gap:8px}
 .scb-through::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--acc);flex:0 0 auto}
 .scb-through b{color:var(--mute);font-weight:600}
@@ -111,6 +118,10 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 const u2 = x => (x>=0?'+':'\u2212') + Math.abs(Math.round(x*100)/100).toFixed(2);
 const cls = x => x>0?'pos':x<0?'neg':'mut';
 const dash = '\u2013';
+
+let view = 'k';      // 'k' | 'tennis'
+let tstat = 'ace';   // 'ace' | 'df'
+
 function authScreen(msg, c){
   app.innerHTML = `<div class="auth">
     <div class="mark">Raya <i>HQ</i></div>
@@ -164,7 +175,8 @@ function tierEl(railHTML, name, desc, rows, lastDay){
       ${lastHTML}
     </div></section>`;
 }
-function ledger(rows){
+function ledger(rows, opt){
+  opt = opt || {nameKey:'pitcher_name', actKey:'actual_k', actUnit:'K', lineKey:'anchor_line'};
   const sorted=[...rows].sort((a,b)=>(b.slate_date||'').localeCompare(a.slate_date||'')||(a.tier_rank||99)-(b.tier_rank||99));
   const show=sorted.slice(0,20);
   if(!show.length) return '';
@@ -172,49 +184,84 @@ function ledger(rows){
     const res=r.result||'pending';
     const tag=r.in_top5?'T5':r.in_top10?'T10':'\u00b7';
     const side=(r.bet_side||'').charAt(0).toUpperCase();
-    const k=r.actual_k==null?`<span class="lk">${dash} K</span>`:`<span class="lk">${r.actual_k} K</span>`;
+    const av=r[opt.actKey];
+    const k=av==null?`<span class="lk">${dash} ${opt.actUnit}</span>`:`<span class="lk">${av} ${opt.actUnit}</span>`;
     const u=r.profit_units==null?`<span class="lu flat">\u00b7</span>`:`<span class="lu ${cls(+r.profit_units)==='mut'?'flat':cls(+r.profit_units)}">${u2(+r.profit_units)}</span>`;
-    return `<div class="lrow"><span class="lres ${res}"></span><span class="lname">${esc(r.pitcher_name)}</span>
-      <span class="ltag">${tag}</span><span class="lpick">${side}${r.anchor_line}</span>${k}${u}</div>`;
+    return `<div class="lrow"><span class="lres ${res}"></span><span class="lname">${esc(r[opt.nameKey])}</span>
+      <span class="ltag">${tag}</span><span class="lpick">${side}${r[opt.lineKey]}</span>${k}${u}</div>`;
   };
   return `<div class="ledger"><div class="ledger-h"><b>Recent Results</b><span>last ${show.length}</span></div>${show.map(row).join('')}</div>`;
+}
+function shellHTML(metaTitle, metaSub, through, mid, footHTML){
+  const subtabs = view==='tennis' ? `<div class="subtabs">
+      <div class="subtab ${tstat==='ace'?'on':''}" data-stat="ace">Aces</div>
+      <div class="subtab ${tstat==='df'?'on':''}" data-stat="df">Double Faults</div></div>` : '';
+  return `<header class="scb-hdr">
+      <div class="scb-bars"><i></i><i></i><i></i></div>
+      <div class="scb-logo">Raya <i>HQ</i></div>
+      <div class="scb-meta"><b>${metaTitle}</b><span>${metaSub}</span></div>
+    </header>
+    <div class="tabs">
+      <div class="tab ${view==='k'?'on':''}" data-view="k">Strikeout</div>
+      <div class="tab ${view==='tennis'?'on':''}" data-view="tennis">Tennis</div>
+    </div>
+    ${subtabs}
+    <div class="scb-through">Results current through <b>${esc(through)}</b></div>
+    ${mid}
+    <footer class="scb-foot">${footHTML}</footer>`;
+}
+function wire(){
+  app.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{ view=t.dataset.view; board(); });
+  app.querySelectorAll('.subtab').forEach(t=>t.onclick=()=>{ tstat=t.dataset.stat; board(); });
+  const so=document.getElementById('signout'); if(so) so.onclick=async()=>{await sb.auth.signOut();route();};
 }
 async function board(){
   app.innerHTML=`<div class="loading">Loading scoreboard\u2026</div>`;
   const {data:{session}}=await sb.auth.getSession();
   if(session && session.user.email!==OWNER_EMAIL){ await sb.auth.signOut(); authScreen('That account isn\u2019t the owner. This app is private.','err'); return; }
-  const {data,error}=await sb.from('mlb_k_brief_log').select('*');
-  if(error){ app.innerHTML=`<div class="empty"><b>Couldn\u2019t load</b>${esc(error.message)}</div>`; return; }
+
+  if(view==='k'){
+    const {data,error}=await sb.from('mlb_k_brief_log').select('*');
+    if(error){ app.innerHTML=`<main class="scb"><div class="empty"><b>Couldn\u2019t load</b>${esc(error.message)}</div></main>`; return; }
+    const rows=data||[];
+    const graded=rows.filter(r=>r.result);
+    const lastDay=graded.length?graded.map(r=>r.slate_date).sort().slice(-1)[0]:null;
+    const through=lastDay||'no results yet';
+    const tiers=`<div class="scb-list">
+      ${tierEl('<b>TOP</b><span>5</span>','Top 5','Morning brief',rows.filter(r=>r.in_top5),lastDay)}
+      ${tierEl('<b>TOP</b><span class="two">10</span>','Top 10','Next 5 ranked',rows.filter(r=>r.in_top10),lastDay)}
+      ${tierEl('<b>ALL</b><span class="sum">\u03A3</span>','Overall','Every qualifying pick',rows,lastDay)}</div>`;
+    let mid;
+    if(!rows.length) mid=`<div class="empty"><b>No picks logged yet</b>The morning brief begins logging on its next run. Once games settle, the scoreboard fills in here.</div>`;
+    else if(!graded.length) mid=`<div class="note">${rows.length} picks logged \u00b7 0 graded \u2014 records appear once the grader settles them against actual strikeouts.</div>${tiers}${ledger(rows)}`;
+    else mid=`${tiers}${ledger(rows)}`;
+    const foot=`<div class="row"><span>Net units \u00b7 flat 1u \u00b7 best-book price</span><span>Model <b>linreg_k_v1</b></span></div>
+      <div class="row"><span>Breakeven <b>${BREAKEVEN}%</b> at \u2212110 juice</span><span><a id="signout">Sign out</a></span></div>`;
+    app.innerHTML=shellHTML('Evening Scoreboard','Strikeout Grading',through,mid,foot);
+    wire(); return;
+  }
+
+  // ── tennis ──
+  const {data,error}=await sb.from('tennis_serve_brief_log').select('*').eq('stat',tstat);
+  if(error){ app.innerHTML=`<main class="scb"><div class="empty"><b>Couldn\u2019t load</b>${esc(error.message)}</div></main>`; return; }
   const rows=data||[];
   const graded=rows.filter(r=>r.result);
   const lastDay=graded.length?graded.map(r=>r.slate_date).sort().slice(-1)[0]:null;
   const through=lastDay||'no results yet';
-  const tiers = `<div class="scb-list">
-    ${tierEl('<b>TOP</b><span>5</span>','Top 5','Morning brief',rows.filter(r=>r.in_top5),lastDay)}
+  const statLab = tstat==='df' ? 'double-fault' : 'ace';
+  const lopt={nameKey:'player_name', actKey:'actual', actUnit:(tstat==='df'?'DF':'A'), lineKey:'pp_line'};
+  const tiers=`<div class="scb-list">
+    ${tierEl('<b>TOP</b><span>5</span>','Top 5','Serve brief',rows.filter(r=>r.in_top5),lastDay)}
     ${tierEl('<b>TOP</b><span class="two">10</span>','Top 10','Next 5 ranked',rows.filter(r=>r.in_top10),lastDay)}
-    ${tierEl('<b>ALL</b><span class="sum">\u03A3</span>','Overall','Every qualifying pick',rows,lastDay)}
-  </div>`;
+    ${tierEl('<b>ALL</b><span class="sum">\u03A3</span>','Overall','Every qualifying pick',rows,lastDay)}</div>`;
   let mid;
-  if(!rows.length){
-    mid=`<div class="empty"><b>No picks logged yet</b>The morning brief begins logging on its next run. Once games settle, the scoreboard fills in here.</div>`;
-  } else if(!graded.length){
-    mid=`<div class="note">${rows.length} picks logged \u00b7 0 graded \u2014 records appear once the grader settles them against actual strikeouts.</div>${tiers}${ledger(rows)}`;
-  } else {
-    mid=`${tiers}${ledger(rows)}`;
-  }
-  app.innerHTML=`
-    <header class="scb-hdr">
-      <div class="scb-bars"><i></i><i></i><i></i></div>
-      <div class="scb-logo">Raya <i>HQ</i></div>
-      <div class="scb-meta"><b>Evening Scoreboard</b><span>Strikeout Grading</span></div>
-    </header>
-    <div class="scb-through">Results current through <b>${esc(through)}</b></div>
-    ${mid}
-    <footer class="scb-foot">
-      <div class="row"><span>Net units \u00b7 flat 1u \u00b7 best-book price</span><span>Model <b>linreg_k_v1</b></span></div>
-      <div class="row"><span>Breakeven <b>${BREAKEVEN}%</b> at \u2212110 juice</span><span><a id="signout">Sign out</a></span></div>
-    </footer>`;
-  const so=document.getElementById('signout'); if(so) so.onclick=async()=>{await sb.auth.signOut();route();};
+  if(!rows.length) mid=`<div class="empty"><b>No ${statLab} picks logged yet</b>The tennis brief logs on its next capture. Records fill in once matches settle.</div>`;
+  else if(!graded.length) mid=`<div class="note">${rows.length} ${statLab} picks logged \u00b7 0 graded \u2014 results appear once actuals settle (Sackmann / SofaScore feed).</div>${tiers}${ledger(rows,lopt)}`;
+  else mid=`${tiers}${ledger(rows,lopt)}`;
+  const foot=`<div class="row"><span>Net units \u00b7 PrizePicks pick\u2019em</span><span>Model <b>wta_serve_v1</b></span></div>
+    <div class="row"><span>${statLab.toUpperCase()} props \u00b7 grading pending</span><span><a id="signout">Sign out</a></span></div>`;
+  app.innerHTML=shellHTML('Evening Scoreboard',(tstat==='df'?'Double-Fault':'Ace')+' Grading',through,mid,foot);
+  wire();
 }
 async function route(){ const {data:{session}}=await sb.auth.getSession(); if(session) board(); else authScreen(); }
 sb.auth.onAuthStateChange((_e,s)=>{ if(s) board(); });
