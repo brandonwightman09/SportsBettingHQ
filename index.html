@@ -48,12 +48,14 @@ body{font-family:'Hanken Grotesk',system-ui,sans-serif;-webkit-font-smoothing:an
 .scb-meta b{display:block;font-family:'Saira Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);white-space:nowrap;line-height:1.2}
 .scb-meta span{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
 /* ── tabs (added) ── */
-.tabs{display:flex;gap:7px;margin-bottom:14px}
-.tab{flex:1;text-align:center;background:var(--tile);border:1px solid var(--line);border-radius:11px;padding:10px;font-family:'Saira Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:.07em;text-transform:uppercase;color:var(--mute);cursor:pointer}
+.tabs{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}
+.tab{flex:1 1 calc(50% - 4px);text-align:center;background:var(--tile);border:1px solid var(--line);border-radius:11px;padding:10px;font-family:'Saira Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:.07em;text-transform:uppercase;color:var(--mute);cursor:pointer}
 .tab.on{background:var(--acc);color:var(--bg);border-color:var(--acc)}
 .subtabs{display:flex;gap:7px;margin-bottom:14px}
 .subtab{flex:1;text-align:center;background:transparent;border:1px solid var(--line);border-radius:9px;padding:7px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);cursor:pointer}
 .subtab.on{border-color:var(--acc-d);color:var(--acc)}
+.wc-grp{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--acc-d);padding:9px 0 5px;border-top:1px solid var(--line)}
+.wc-cume{display:grid;grid-template-columns:repeat(3,1fr);column-gap:12px;align-items:start;padding:11px 0 12px;border-top:1px solid var(--line)}
 .scb-through{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:16px;display:flex;align-items:center;gap:8px}
 .scb-through::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--acc);flex:0 0 auto}
 .scb-through b{color:var(--mute);font-weight:600}
@@ -121,9 +123,12 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 const u2 = x => (x>=0?'+':'\u2212') + Math.abs(Math.round(x*100)/100).toFixed(2);
 const cls = x => x>0?'pos':x<0?'neg':'mut';
 const dash = '\u2013';
+const fmtUTC = ts => { const d=new Date(ts); return isNaN(d)?String(ts):`${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')} UTC`; };
+const fmtDay = s => { const d=new Date(String(s)+'T00:00:00Z'); return isNaN(d)?String(s):d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'}); };
 
-let view = 'k';      // 'k' | 'tennis'
+let view = 'k';      // 'k' | 'tennis' | 'epl' | 'wc'
 let tstat = 'ace';   // 'ace' | 'df'
+let wstat = 'Shots'; // 'Shots' | 'Shots On Target'
 
 function authScreen(msg, c){
   app.innerHTML = `<div class="auth">
@@ -215,10 +220,14 @@ function ledger(rows, opt){
   };
   return `<div class="ledger"><div class="ledger-h"><b>Recent Results</b><span>last ${show.length}</span></div>${show.map(row).join('')}</div>`;
 }
-function shellHTML(metaTitle, metaSub, through, mid, footHTML){
+function shellHTML(metaTitle, metaSub, through, mid, footHTML, throughLabel){
+  throughLabel = throughLabel || 'Results current through';
   const subtabs = view==='tennis' ? `<div class="subtabs">
       <div class="subtab ${tstat==='ace'?'on':''}" data-stat="ace">Aces</div>
-      <div class="subtab ${tstat==='df'?'on':''}" data-stat="df">Double Faults</div></div>` : '';
+      <div class="subtab ${tstat==='df'?'on':''}" data-stat="df">Double Faults</div></div>`
+    : view==='wc' ? `<div class="subtabs">
+      <div class="subtab ${wstat==='Shots'?'on':''}" data-stat="Shots">Shots</div>
+      <div class="subtab ${wstat==='Shots On Target'?'on':''}" data-stat="Shots On Target">On Target</div></div>` : '';
   return `<header class="scb-hdr">
       <div class="scb-bars"><i></i><i></i><i></i></div>
       <div class="scb-logo">Raya <i>HQ</i></div>
@@ -227,15 +236,17 @@ function shellHTML(metaTitle, metaSub, through, mid, footHTML){
     <div class="tabs">
       <div class="tab ${view==='k'?'on':''}" data-view="k">Strikeout</div>
       <div class="tab ${view==='tennis'?'on':''}" data-view="tennis">Tennis</div>
+      <div class="tab ${view==='epl'?'on':''}" data-view="epl">EPL Shots</div>
+      <div class="tab ${view==='wc'?'on':''}" data-view="wc">World Cup</div>
     </div>
     ${subtabs}
-    <div class="scb-through">Results current through <b>${esc(through)}</b></div>
+    <div class="scb-through">${throughLabel} <b>${esc(through)}</b></div>
     ${mid}
     <footer class="scb-foot">${footHTML}</footer>`;
 }
 function wire(){
   app.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{ view=t.dataset.view; board(); });
-  app.querySelectorAll('.subtab').forEach(t=>t.onclick=()=>{ tstat=t.dataset.stat; board(); });
+  app.querySelectorAll('.subtab').forEach(t=>t.onclick=()=>{ if(view==='wc'){ wstat=t.dataset.stat; } else { tstat=t.dataset.stat; } board(); });
   const so=document.getElementById('signout'); if(so) so.onclick=async()=>{await sb.auth.signOut();route();};
 }
 async function board(){
@@ -265,27 +276,123 @@ async function board(){
   }
 
   // ── tennis ──
-  const {data,error}=await sb.from('tennis_serve_brief_log').select('*').eq('stat',tstat);
-  if(error){ app.innerHTML=`<main class="scb"><div class="empty"><b>Couldn\u2019t load</b>${esc(error.message)}</div></main>`; return; }
-  const rows=data||[];
-  const graded=rows.filter(r=>r.result);
-  const lastDay=graded.length?graded.map(r=>r.slate_date).sort().slice(-1)[0]:null;
-  const through=lastDay||'no results yet';
-  const statLab = tstat==='df' ? 'double-fault' : 'ace';
-  const lopt={nameKey:'player_name', actKey:'actual', actUnit:(tstat==='df'?'DF':'A'), lineKey:'pp_line'};
-  const tiers=`<div class="scb-list">
-    ${tierEl('<b>TOP</b><span>5</span>','Top 5','Serve brief',rows.filter(r=>r.in_top5),lastDay)}
-    ${tierEl('<b>TOP</b><span class="two">10</span>','Top 10','Next 5 ranked',rows.filter(r=>r.in_top10),lastDay)}
-    ${tierEl('<b>ALL</b><span class="sum">\u03A3</span>','Overall','Every qualifying pick',rows,lastDay)}</div>`;
-  let mid;
-  if(!rows.length) mid=`<div class="empty"><b>No ${statLab} picks logged yet</b>The tennis brief logs on its next capture. Records fill in once matches settle.</div>`;
-  else if(!graded.length) mid=`<div class="note">${rows.length} ${statLab} picks logged \u00b7 0 graded \u2014 results appear once actuals settle (Sackmann / SofaScore feed).</div>${tiers}${ledger(rows,lopt)}`;
-  else mid=`${tiers}${ledger(rows,lopt)}`;
-  const foot=`<div class="row"><span>Net units \u00b7 PrizePicks pick\u2019em</span><span>Model <b>wta_serve_v1</b></span></div>
-    <div class="row"><span>${statLab.toUpperCase()} props \u00b7 grading pending</span><span><a id="signout">Sign out</a></span></div>`;
-  app.innerHTML=shellHTML('Evening Scoreboard',(tstat==='df'?'Double-Fault':'Ace')+' Grading',through,mid,foot);
-  wire();
+  if(view==='tennis'){
+    const {data,error}=await sb.from('tennis_serve_brief_log').select('*').eq('stat',tstat);
+    if(error){ app.innerHTML=`<main class="scb"><div class="empty"><b>Couldn\u2019t load</b>${esc(error.message)}</div></main>`; return; }
+    const rows=data||[];
+    const graded=rows.filter(r=>r.result);
+    const lastDay=graded.length?graded.map(r=>r.slate_date).sort().slice(-1)[0]:null;
+    const through=lastDay||'no results yet';
+    const statLab = tstat==='df' ? 'double-fault' : 'ace';
+    const lopt={nameKey:'player_name', actKey:'actual', actUnit:(tstat==='df'?'DF':'A'), lineKey:'pp_line'};
+    const tiers=`<div class="scb-list">
+      ${tierEl('<b>TOP</b><span>5</span>','Top 5','Serve brief',rows.filter(r=>r.in_top5),lastDay)}
+      ${tierEl('<b>TOP</b><span class="two">10</span>','Top 10','Next 5 ranked',rows.filter(r=>r.in_top10),lastDay)}
+      ${tierEl('<b>ALL</b><span class="sum">\u03A3</span>','Overall','Every qualifying pick',rows,lastDay)}</div>`;
+    let mid;
+    if(!rows.length) mid=`<div class="empty"><b>No ${statLab} picks logged yet</b>The tennis brief logs on its next capture. Records fill in once matches settle.</div>`;
+    else if(!graded.length) mid=`<div class="note">${rows.length} ${statLab} picks logged \u00b7 0 graded \u2014 results appear once actuals settle (Sackmann / SofaScore feed).</div>${tiers}${ledger(rows,lopt)}`;
+    else mid=`${tiers}${ledger(rows,lopt)}`;
+    const foot=`<div class="row"><span>Net units \u00b7 PrizePicks pick\u2019em</span><span>Model <b>wta_serve_v1</b></span></div>
+      <div class="row"><span>${statLab.toUpperCase()} props \u00b7 grading pending</span><span><a id="signout">Sign out</a></span></div>`;
+    app.innerHTML=shellHTML('Evening Scoreboard',(tstat==='df'?'Double-Fault':'Ace')+' Grading',through,mid,foot);
+    wire(); return;
+  }
+
+  // ── EPL shots ──
+  if(view==='epl'){
+    const {data,error}=await sb.from('soccer_shots_brief_log').select('*');
+    if(error){ app.innerHTML=`<main class="scb"><div class="empty"><b>Couldn\u2019t load</b>${esc(error.message)}</div></main>`; return; }
+    const rows=data||[];
+    const graded=rows.filter(r=>r.result);
+    const lastDay=graded.length?graded.map(r=>r.slate_date).sort().slice(-1)[0]:null;
+    const through=lastDay||'no results yet';
+    const lopt={nameKey:'player_name', actKey:'actual', actUnit:'SH', lineKey:'line'};
+    const tiers=`<div class="scb-list">
+      ${tierEl('<b>TOP</b><span>5</span>','Top 5','Shots brief',rows.filter(r=>r.in_top5),lastDay)}
+      ${tierEl('<b>TOP</b><span class="two">10</span>','Top 10','Next 5 ranked',rows.filter(r=>r.in_top10),lastDay)}
+      ${tierEl('<b>ALL</b><span class="sum">\u03A3</span>','Overall','Every qualifying pick',rows,lastDay)}</div>`;
+    let mid;
+    if(!rows.length) mid=`<div class="empty"><b>No EPL picks logged yet</b>The shots brief resumes when the league season returns. Records fill in here once matches settle.</div>`;
+    else if(!graded.length) mid=`<div class="note">${rows.length} picks logged \u00b7 0 graded \u2014 records appear once the grader settles them against actual shots.</div>${tiers}${ledger(rows,lopt)}`;
+    else mid=`${tiers}${ledger(rows,lopt)}`;
+    const foot=`<div class="row"><span>Net units \u00b7 flat 1u \u00b7 PrizePicks line</span><span>EPL <b>shots brief</b></span></div>
+      <div class="row"><span>Breakeven ${BREAKEVEN}% at \u2212110 juice</span><span><a id="signout">Sign out</a></span></div>`;
+    app.innerHTML=shellHTML('Evening Scoreboard','EPL Shots Grading',through,mid,foot);
+    wire(); return;
+  }
+
+  // ── World Cup (CLV tracker, real captures only) ──
+  if(view==='wc'){
+    let totalSnaps=0, latest=[], trades=[];
+    try{
+      const cnt=await sb.from('intl_shots_line_snapshots').select('*',{count:'exact',head:true});
+      totalSnaps=cnt.count||0;
+      const lq=await sb.from('intl_shots_line_snapshots').select('*').eq('odds_type','standard').order('captured_at',{ascending:false}).limit(400);
+      if(lq.error) throw lq.error;
+      latest=lq.data||[];
+      const tq=await sb.from('intl_shots_paper_trades').select('*');
+      trades=tq.data||[];
+    }catch(err){
+      app.innerHTML=shellHTML('Line Capture','World Cup CLV',dash,`<div class="empty"><b>Couldn\u2019t load</b>${esc(err.message||String(err))}</div>`,wcFoot(),'Lines captured through');
+      wire(); return;
+    }
+    const latestTs = latest.length ? latest[0].captured_at : null;
+    const boardRows = latest.filter(r=>r.captured_at===latestTs);
+    const wrows = boardRows.filter(r=>r.stat_type===wstat);
+    const capLab = latestTs ? fmtUTC(latestTs) : 'no capture yet';
+    const players = new Set(boardRows.map(r=>r.player)).size;
+    const matches = new Set(boardRows.map(r=>`${r.team}|${r.opponent}`)).size;
+    const tag = wstat==='Shots' ? 'SH' : 'SOT';
+    const statusCard=`<section class="tier">
+      <div class="tier-rail"><b>WC</b><span class="sum">\u03A3</span></div>
+      <div class="tier-body">
+        <div class="tier-head"><div class="tier-name">Capture</div><div class="tier-desc">Harness live \u00b7 twice daily</div></div>
+        <div class="wc-cume">
+          <div class="stat"><span class="lab">Line&nbsp;obs</span><span class="val">${totalSnaps.toLocaleString()}</span></div>
+          <div class="stat"><span class="lab">Players</span><span class="val">${players}</span></div>
+          <div class="stat"><span class="lab">Matches</span><span class="val">${matches}</span></div>
+        </div>
+      </div></section>`;
+    let boardHTML;
+    if(!wrows.length){
+      boardHTML=`<div class="empty"><b>No standard ${tag} lines yet</b>PrizePicks posts standard ${esc(wstat)} lines closer to kickoff. Specials (demon/goblin) are captured but not graded.</div>`;
+    } else {
+      const groups={};
+      wrows.forEach(r=>{ const k=`${r.team} vs ${r.opponent}`; (groups[k]=groups[k]||[]).push(r); });
+      const grp=Object.entries(groups).map(([m,rs])=>{
+        const md=rs[0].match_date?fmtDay(rs[0].match_date):'';
+        const lines=rs.slice().sort((a,b)=>(+b.line)-(+a.line)).map(r=>
+          `<div class="lrow"><span class="lres pending"></span><span class="lname">${esc(r.player)}</span>
+            <span class="ltag">${tag}</span><span class="lpick">${r.line}</span></div>`).join('');
+        return `<div class="wc-grp">${esc(m)}${md?` \u00b7 ${md}`:''}</div>${lines}`;
+      }).join('');
+      boardHTML=`<div class="ledger"><div class="ledger-h"><b>Lines Tracking</b><span>standard \u00b7 latest pull</span></div>${grp}</div>`;
+    }
+    const gradedTrades=trades.filter(t=>t.clv!=null);
+    let clvHTML;
+    if(!gradedTrades.length){
+      clvHTML=`<div class="empty"><b>CLV grades pending</b>Opening lines are logging now, snapshotted twice daily. After the Jun 11 openers, once lines move open\u2192close, closing-line value is bucketed here by gap band.</div>`;
+    } else {
+      const bands={};
+      gradedTrades.forEach(t=>{ const b=t.gap_band||'?'; (bands[b]=bands[b]||[]).push(t); });
+      const order=['0-0.5','0.5-1','1-1.5','1.5-2','2+'];
+      const brows=Object.entries(bands).sort((a,b)=>order.indexOf(a[0])-order.indexOf(b[0])).map(([b,ts])=>{
+        const avg=ts.reduce((s,t)=>s+(+t.clv||0),0)/ts.length;
+        const tw=100*ts.filter(t=>t.clv_toward_us).length/ts.length;
+        return `<div class="lrow"><span class="lres ${avg>0?'win':avg<0?'loss':'push'}"></span><span class="lname">${esc(b)}</span>
+          <span class="ltag">${ts.length}</span><span class="lpick">${tw.toFixed(0)}%</span><span class="lu ${cls(avg)==='mut'?'flat':cls(avg)}">${u2(avg)}</span></div>`;
+      }).join('');
+      clvHTML=`<div class="ledger"><div class="ledger-h"><b>CLV by Gap Band</b><span>avg move \u00b7 toward us</span></div>${brows}</div>`;
+    }
+    const note=`<div class="note">World Cup is a CLV-tracking board \u2014 not a pick board. The shots model doesn\u2019t beat the market prior, so this tracks whether PrizePicks lines drift our way (open\u2192close), graded after Jun 11. Specials captured; standard lines graded.</div>`;
+    const mid=`${note}<div class="scb-list">${statusCard}</div>${boardHTML}${clvHTML}`;
+    app.innerHTML=shellHTML('Line Capture','World Cup CLV',capLab,mid,wcFoot(),'Lines captured through');
+    wire(); return;
+  }
 }
+function wcFoot(){ return `<div class="row"><span>CLV harness \u00b7 twice daily</span><span>PrizePicks <b>WORLD CUP</b></span></div>
+  <div class="row"><span>Open vs close \u00b7 grades after Jun 11</span><span><a id="signout">Sign out</a></span></div>`; }
 async function route(){ const {data:{session}}=await sb.auth.getSession(); if(session) board(); else authScreen(); }
 sb.auth.onAuthStateChange((_e,s)=>{ if(s) board(); });
 route();
