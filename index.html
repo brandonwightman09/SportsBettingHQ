@@ -107,6 +107,15 @@ body{font-family:'Hanken Grotesk',system-ui,sans-serif;-webkit-font-smoothing:an
 .scb-foot b{color:var(--acc-d);font-weight:600}
 .scb-foot .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .scb-foot a{color:var(--faint);text-decoration:none;cursor:pointer}
+/* ── bankroll ── */
+.bankhero{background:linear-gradient(160deg,var(--card),var(--tile));border:1px solid var(--line);border-radius:16px;padding:18px 18px 15px;position:relative;overflow:hidden}
+.bankhero::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--acc)}
+.bankhero .blab{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+.bankhero .big{font-family:'Saira Condensed',sans-serif;font-weight:800;font-size:46px;line-height:.9;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.01em;margin-top:4px}
+.bankhero .delta{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.03em;color:var(--mute);margin-top:6px}
+.bankhero .delta .pos{color:var(--pos);font-weight:600}.bankhero .delta .neg{color:var(--neg);font-weight:600}
+.bankhero .kelly{margin-top:13px;padding-top:11px;border-top:1px solid var(--line);display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--faint)}
+.bankhero .kelly b{font-family:'Saira Condensed',sans-serif;font-weight:800;font-size:19px;color:var(--mute);font-variant-numeric:tabular-nums;letter-spacing:.01em}
 </style>
 </head>
 <body>
@@ -126,7 +135,7 @@ const dash = '\u2013';
 const fmtUTC = ts => { const d=new Date(ts); return isNaN(d)?String(ts):`${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')} UTC`; };
 const fmtDay = s => { const d=new Date(String(s)+'T00:00:00Z'); return isNaN(d)?String(s):d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'}); };
 
-let view = 'k';      // 'k' | 'tennis' | 'epl' | 'wc'
+let view = 'k';      // 'k' | 'tennis' | 'epl' | 'wc' | 'bank'
 let tstat = 'ace';   // 'ace' | 'df'
 let wstat = 'Shots'; // 'Shots' | 'Shots On Target'
 
@@ -238,6 +247,7 @@ function shellHTML(metaTitle, metaSub, through, mid, footHTML, throughLabel){
       <div class="tab ${view==='tennis'?'on':''}" data-view="tennis">Tennis</div>
       <div class="tab ${view==='epl'?'on':''}" data-view="epl">EPL Shots</div>
       <div class="tab ${view==='wc'?'on':''}" data-view="wc">World Cup</div>
+      <div class="tab ${view==='bank'?'on':''}" data-view="bank">Bankroll</div>
     </div>
     ${subtabs}
     <div class="scb-through">${throughLabel} <b>${esc(through)}</b></div>
@@ -390,9 +400,106 @@ async function board(){
     app.innerHTML=shellHTML('Line Capture','World Cup CLV',capLab,mid,wcFoot(),'Lines captured through');
     wire(); return;
   }
+
+  // ── Bankroll (paper-trading ledger) ──
+  if(view==='bank'){
+    let cfg=null, bets=[];
+    try{
+      const cq=await sb.from('raya_bankroll').select('*').eq('id',1).single();
+      if(cq.error) throw cq.error;
+      cfg=cq.data;
+      const bq=await sb.from('raya_paper_bets').select('*').order('placed_at',{ascending:false});
+      if(bq.error) throw bq.error;
+      bets=bq.data||[];
+    }catch(err){
+      app.innerHTML=shellHTML('Paper Trading','Bankroll',dash,`<div class="empty"><b>Couldn\u2019t load</b>${esc(err.message||String(err))}</div>`,bankFoot(null,null),'Bankroll current through');
+      wire(); return;
+    }
+    const start=+cfg.starting_balance, unit=+cfg.unit_size;
+    const staked=bets.filter(b=>+b.stake_units>0);
+    const settled=staked.filter(b=>b.result==='win'||b.result==='loss'||b.result==='push');
+    const pending=staked.filter(b=>!b.result);
+    const w=settled.filter(b=>b.result==='win').length;
+    const l=settled.filter(b=>b.result==='loss').length;
+    const p=settled.filter(b=>b.result==='push').length;
+    const netFlat=settled.reduce((s,b)=>s+(+b.pnl_dollars||0),0);
+    const netKU=settled.reduce((s,b)=>s+(+b.kelly_pnl_units||0),0);
+    const balFlat=start+netFlat;
+    const balKelly=start+netKU*unit;
+    const turnover=settled.reduce((s,b)=>s+(+b.stake_dollars||0),0);
+    const roi=turnover>0?netFlat/turnover*100:null;
+    const hit=(w+l)?100*w/(w+l):null;
+    const pct=start>0?netFlat/start*100:0;
+    const lastDay=settled.length?settled.map(b=>b.event_date).filter(Boolean).sort().slice(-1)[0]:null;
+    const through=lastDay||'no settled bets';
+    const money=x=>(x<0?'\u2212':'')+'$'+Math.abs(x).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const dMoney=x=>(x>=0?'+':'\u2212')+'$'+Math.abs(x).toFixed(2);
+
+    if(!staked.length){
+      const note=`<div class="note">No staked bets yet. The evening chain logs +EV picks here as they\u2019re placed; tracked (\u2212EV) picks are recorded but don\u2019t move the bankroll.</div>`;
+      const empty=`<div class="empty"><b>Bankroll standing by</b>Starting balance ${money(start)} \u00b7 flat 1u = ${money(unit)}. First +EV pick opens the ledger.</div>`;
+      app.innerHTML=shellHTML('Paper Trading','Bankroll',through,note+empty,bankFoot(start,unit),'Bankroll current through');
+      wire(); return;
+    }
+
+    const hero=`<div class="bankhero">
+      <div class="blab">Flat balance \u00b7 live</div>
+      <div class="big">${money(balFlat)}</div>
+      <div class="delta"><span class="${cls(netFlat)==='mut'?'':cls(netFlat)}">${dMoney(netFlat)}</span> (${pct>=0?'+':'\u2212'}${Math.abs(pct).toFixed(1)}%) vs ${money(start)} start</div>
+      <div class="kelly"><span>Quarter-Kelly shadow</span><b>${money(balKelly)}</b></div>
+    </div>`;
+
+    const hitVal = hit==null?`<span class="val mut">${dash}</span>`:`<span class="val ${hit>=BREAKEVEN?'pos':'neg'}">${hit.toFixed(1)}<i>%</i></span>`;
+    const roiVal = roi==null?`<span class="val mut">${dash}</span>`:`<span class="val ${cls(roi)}">${roi>=0?'+':'\u2212'}${Math.abs(roi).toFixed(1)}<i>%</i></span>`;
+    const perf=`<section class="tier">
+      <div class="tier-rail"><b>NET</b><span class="sum">\u03A3</span></div>
+      <div class="tier-body">
+        <div class="tier-head"><div class="tier-name">Performance</div><div class="tier-desc">settled \u00b7 staked</div></div>
+        <div class="cume">
+          <div class="stat"><span class="lab">Record</span><span class="val">${settled.length?`${w}${dash}${l}${p?`${dash}${p}p`:''}`:`0${dash}0`}</span></div>
+          <div class="stat"><span class="lab">Hit&nbsp;%</span>${hitVal}<span class="be">need ${BREAKEVEN}%</span></div>
+          <div class="stat"><span class="lab">ROI</span>${roiVal}</div>
+          <div class="stat"><span class="lab">Pending</span><span class="val mut">${pending.length}</span><span class="pend ${pending.length?'live':''}">${pending.length?'awaiting':'graded'}</span></div>
+        </div>
+      </div></section>`;
+
+    const sports={};
+    settled.forEach(b=>{ const k=b.sport||'?'; (sports[k]=sports[k]||[]).push(b); });
+    const sportRows=Object.entries(sports).map(([s,bs])=>{
+      const sw=bs.filter(b=>b.result==='win').length, sl=bs.filter(b=>b.result==='loss').length;
+      const sd=bs.reduce((a,b)=>a+(+b.pnl_dollars||0),0);
+      const res=sd>0?'win':sd<0?'loss':'push';
+      return `<div class="lrow"><span class="lres ${res}"></span><span class="lname">${esc(s.toUpperCase())}</span>
+        <span class="ltag">${sw}${dash}${sl}</span><span class="lpick">${bs.length} bet${bs.length>1?'s':''}</span>
+        <span class="lu ${cls(sd)==='mut'?'flat':cls(sd)}">${dMoney(sd)}</span></div>`;
+    }).join('');
+    const sportCard = sportRows?`<div class="ledger"><div class="ledger-h"><b>By Sport</b><span>net \u00b7 flat</span></div>${sportRows}</div>`:'';
+
+    const recent=[...staked].sort((a,b)=>String(b.placed_at||'').localeCompare(String(a.placed_at||''))).slice(0,20);
+    const betRows=recent.map(b=>{
+      const res=b.result||'pending';
+      const side=(b.side||'').charAt(0).toUpperCase();
+      const mk=(b.market||'').toLowerCase();
+      const tag = mk.includes('strikeout')?'K' : mk.includes('shot')?'SH' : mk.includes('ace')?'A' : mk.includes('fault')?'DF' : ((b.sport||'').toString().slice(0,3).toUpperCase()||'\u00b7');
+      const av=b.actual==null?`<span class="lk">${dash}</span>`:`<span class="lk">${+b.actual}</span>`;
+      const u=b.pnl_dollars==null?`<span class="lu flat">\u00b7</span>`:`<span class="lu ${cls(+b.pnl_dollars)==='mut'?'flat':cls(+b.pnl_dollars)}">${dMoney(+b.pnl_dollars)}</span>`;
+      return `<div class="lrow"><span class="lres ${res}"></span><span class="lname">${esc(b.player||b.matchup||'\u2014')}</span>
+        <span class="ltag">${esc(tag)}</span><span class="lpick">${side}${b.line!=null?(+b.line):''}</span>${av}${u}</div>`;
+    }).join('');
+    const betCard=`<div class="ledger"><div class="ledger-h"><b>Recent Bets</b><span>last ${recent.length} staked</span></div>${betRows}</div>`;
+
+    const mid=`<div class="scb-list">${hero}${perf}</div>${sportCard}${betCard}`;
+    app.innerHTML=shellHTML('Paper Trading','Bankroll',through,mid,bankFoot(start,unit),'Bankroll current through');
+    wire(); return;
+  }
 }
 function wcFoot(){ return `<div class="row"><span>CLV harness \u00b7 twice daily</span><span>PrizePicks <b>WORLD CUP</b></span></div>
   <div class="row"><span>Open vs close \u00b7 grades after Jun 11</span><span><a id="signout">Sign out</a></span></div>`; }
+function bankFoot(start,unit){
+  const s = typeof start==='number' ? `$${start.toLocaleString()}` : '\u2014';
+  const u = typeof unit==='number' ? `$${unit}` : '\u2014';
+  return `<div class="row"><span>Flat 1u = ${u} \u00b7 1% of ${s} start</span><span>Paper <b>Raya bankroll</b></span></div>
+  <div class="row"><span>Quarter-Kelly tracked in shadow</span><span><a id="signout">Sign out</a></span></div>`; }
 async function route(){ const {data:{session}}=await sb.auth.getSession(); if(session) board(); else authScreen(); }
 sb.auth.onAuthStateChange((_e,s)=>{ if(s) board(); });
 route();
