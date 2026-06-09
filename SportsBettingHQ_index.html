@@ -44,7 +44,6 @@ body{font-family:'Hanken Grotesk',system-ui,sans-serif;-webkit-font-smoothing:an
 .scb-meta{margin-left:auto;text-align:right;line-height:1.35}
 .scb-meta b{display:block;font-family:'Saira Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);white-space:nowrap;line-height:1.2}
 .scb-meta span{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
-/* ── tabs (added) ── */
 .tabs{display:flex;gap:7px;margin-bottom:14px}
 .tab{flex:1;text-align:center;background:var(--tile);border:1px solid var(--line);border-radius:11px;padding:10px;font-family:'Saira Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:.07em;text-transform:uppercase;color:var(--mute);cursor:pointer}
 .tab.on{background:var(--acc);color:var(--bg);border-color:var(--acc)}
@@ -95,6 +94,14 @@ body{font-family:'Hanken Grotesk',system-ui,sans-serif;-webkit-font-smoothing:an
 .lk{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--faint);width:46px;text-align:right;flex:0 0 auto}
 .lu{font-family:'Saira Condensed',sans-serif;font-weight:800;font-size:15px;font-variant-numeric:tabular-nums;width:50px;text-align:right;flex:0 0 auto}
 .lu.pos{color:var(--pos)}.lu.neg{color:var(--neg)}.lu.flat{color:var(--faint)}
+.bk-hero{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 16px 12px;margin-bottom:11px}
+.bk-hero .h{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:9px}
+.bk-hero .h b{font-family:'Saira Condensed',sans-serif;font-weight:700;font-size:16px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink)}
+.bk-hero .h span{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.bk-bal{display:flex;align-items:baseline;gap:12px;margin-bottom:8px}
+.bk-bal .big{font-family:'Saira Condensed',sans-serif;font-weight:800;font-size:40px;line-height:.9;color:var(--ink);font-variant-numeric:tabular-nums}
+.bk-bal .chg{font-family:'Saira Condensed',sans-serif;font-weight:800;font-size:18px;font-variant-numeric:tabular-nums}
+.bk-bal .chg.pos{color:var(--pos)}.bk-bal .chg.neg{color:var(--neg)}.bk-bal .chg i{font-style:normal;color:var(--mute);font-size:13px;margin-left:2px}
 .note{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint);line-height:1.5;margin:0 2px 11px;letter-spacing:.02em}
 .empty{background:var(--card);border:1px solid var(--line);border-radius:14px;color:var(--mute);text-align:center;padding:36px 22px;line-height:1.5}
 .empty b{color:var(--ink);font-family:'Saira Condensed',sans-serif;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px;font-size:18px}
@@ -119,7 +126,7 @@ const u2 = x => (x>=0?'+':'\u2212') + Math.abs(Math.round(x*100)/100).toFixed(2)
 const cls = x => x>0?'pos':x<0?'neg':'mut';
 const dash = '\u2013';
 
-let view = 'k';      // 'k' | 'tennis'
+let view = 'k';      // 'k' | 'tennis' | 'bankroll'
 let tstat = 'ace';   // 'ace' | 'df'
 
 function authScreen(msg, c){
@@ -204,6 +211,7 @@ function shellHTML(metaTitle, metaSub, through, mid, footHTML){
     <div class="tabs">
       <div class="tab ${view==='k'?'on':''}" data-view="k">Strikeout</div>
       <div class="tab ${view==='tennis'?'on':''}" data-view="tennis">Tennis</div>
+      <div class="tab ${view==='bankroll'?'on':''}" data-view="bankroll">Bankroll</div>
     </div>
     ${subtabs}
     <div class="scb-through">Results current through <b>${esc(through)}</b></div>
@@ -238,6 +246,57 @@ async function board(){
     const foot=`<div class="row"><span>Net units \u00b7 flat 1u \u00b7 best-book price</span><span>Model <b>linreg_k_v1</b></span></div>
       <div class="row"><span>Breakeven <b>${BREAKEVEN}%</b> at \u2212110 juice</span><span><a id="signout">Sign out</a></span></div>`;
     app.innerHTML=shellHTML('Evening Scoreboard','Strikeout Grading',through,mid,foot);
+    wire(); return;
+  }
+
+  if(view==='bankroll'){
+    const [sumRes,curveRes]=await Promise.all([
+      sb.from('mlb_k_bankroll_summary').select('*'),
+      sb.from('mlb_k_bankroll_curve').select('*').order('bet_no',{ascending:true})
+    ]);
+    if(sumRes.error||curveRes.error){
+      app.innerHTML=`<main class="scb"><div class="empty"><b>Couldn\u2019t load</b>${esc((sumRes.error||curveRes.error).message)}</div></main>`; return;
+    }
+    const byTier=Object.fromEntries((sumRes.data||[]).map(r=>[r.tier,r]));
+    const curve=curveRes.data||[]; const o=byTier.overall;
+    if(!o||!curve.length){
+      app.innerHTML=shellHTML('Evening Scoreboard','Bankroll','no results yet',
+        `<div class="empty"><b>No settled bets yet</b>The bankroll fills in once the strikeout grader settles tonight\u2019s slate.</div>`,
+        `<div class="row"><span>Flat 1u \u00b7 self-updating</span><span><a id="signout">Sign out</a></span></div>`);
+      wire(); return;
+    }
+    const bal=+o.balance, net$=+o.net_dollars, netU=+o.net_units, start=bal-net$;
+    const through=curve[curve.length-1]?.slate_date||'';
+    const pts=[start,...curve.map(p=>+p.balance)];
+    const minY=Math.min(...pts), maxY=Math.max(...pts), span=(maxY-minY)||1, W=394, H=86;
+    const X=i=>(pts.length<2?0:i*(W/(pts.length-1))), Y=v=>H-((v-minY)/span)*H;
+    const d=pts.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+    const col=net$>=0?'var(--pos)':'var(--neg)';
+    const svg=`<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="display:block;margin-top:4px">
+       <path d="${d} L${W},${H} L0,${H} Z" fill="${col}" opacity="0.10"/>
+       <path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/></svg>`;
+    const hero=`<div class="bk-hero">
+       <div class="h"><b>Bankroll</b><span>base $${Math.round(start)} \u00b7 flat 1u</span></div>
+       <div class="bk-bal"><span class="big">$${bal.toFixed(2)}</span>
+         <span class="chg ${net$>=0?'pos':'neg'}">${net$>=0?'+':'\u2212'}$${Math.abs(net$).toFixed(2)}<i>\u00b7 ${u2(netU)}u</i></span></div>
+       ${svg}</div>`;
+    const tierRow=(t,name,desc,rail)=>{ const r=byTier[t]; if(!r) return '';
+      const hit=+r.hit_pct, units=+r.net_units;
+      return `<section class="tier"><div class="tier-rail">${rail}</div>
+        <div class="tier-body"><div class="tier-head"><div class="tier-name">${name}</div><div class="tier-desc">${desc}</div></div>
+        <div class="cume">
+          <div class="stat"><span class="lab">Record</span><span class="val">${r.wins}\u2013${r.losses}</span></div>
+          <div class="stat"><span class="lab">Hit&nbsp;%</span><span class="val ${hit>=BREAKEVEN?'pos':'neg'}">${hit.toFixed(1)}<i>%</i></span></div>
+          <div class="stat"><span class="lab">Net</span><span class="val ${cls(units)}">${u2(units)}<i>u</i></span></div>
+          <div class="stat"><span class="lab">Balance</span><span class="val">$${Math.round(+r.balance)}</span></div>
+        </div></div></section>`; };
+    const tiers=`<div class="scb-list">
+      ${tierRow('top5','Top 5','Morning brief','<b>TOP</b><span>5</span>')}
+      ${tierRow('top10','Top 10','Next 5 ranked','<b>TOP</b><span class="two">10</span>')}
+      ${tierRow('overall','Overall','Every qualifying pick','<b>ALL</b><span class="sum">\u03A3</span>')}</div>`;
+    const foot=`<div class="row"><span>Balance \u00b7 net units \u00b7 flat 1u</span><span>Model <b>linreg_k_v1</b></span></div>
+      <div class="row"><span>Self-updating from grades</span><span><a id="signout">Sign out</a></span></div>`;
+    app.innerHTML=shellHTML('Evening Scoreboard','Bankroll',through,hero+tiers,foot);
     wire(); return;
   }
 
