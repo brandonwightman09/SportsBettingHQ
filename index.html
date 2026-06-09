@@ -401,100 +401,121 @@ async function board(){
     wire(); return;
   }
 
-  // ── Bankroll (paper-trading ledger) ──
+  // ── Bankroll (reads mlb_k_bankroll_summary + mlb_k_bankroll_curve) ──
   if(view==='bank'){
-    let cfg=null, bets=[];
+    let summary=[], curve=[], cfg=null;
     try{
-      const cq=await sb.from('raya_bankroll').select('*').eq('id',1).single();
+      const sq=await sb.from('mlb_k_bankroll_summary').select('*');
+      if(sq.error) throw sq.error;
+      summary=sq.data||[];
+      const cq=await sb.from('mlb_k_bankroll_curve').select('*').order('bet_no',{ascending:true});
       if(cq.error) throw cq.error;
-      cfg=cq.data;
-      const bq=await sb.from('raya_paper_bets').select('*').order('placed_at',{ascending:false});
-      if(bq.error) throw bq.error;
-      bets=bq.data||[];
+      curve=cq.data||[];
+      const bq=await sb.from('raya_bankroll').select('*').eq('id',1).single();
+      if(!bq.error) cfg=bq.data;
     }catch(err){
       app.innerHTML=shellHTML('Paper Trading','Bankroll',dash,`<div class="empty"><b>Couldn\u2019t load</b>${esc(err.message||String(err))}</div>`,bankFoot(null,null),'Bankroll current through');
       wire(); return;
     }
-    const start=+cfg.starting_balance, unit=+cfg.unit_size;
-    const staked=bets.filter(b=>+b.stake_units>0);
-    const settled=staked.filter(b=>b.result==='win'||b.result==='loss'||b.result==='push');
-    const pending=staked.filter(b=>!b.result);
-    const w=settled.filter(b=>b.result==='win').length;
-    const l=settled.filter(b=>b.result==='loss').length;
-    const p=settled.filter(b=>b.result==='push').length;
-    const netFlat=settled.reduce((s,b)=>s+(+b.pnl_dollars||0),0);
-    const netKU=settled.reduce((s,b)=>s+(+b.kelly_pnl_units||0),0);
-    const balFlat=start+netFlat;
-    const balKelly=start+netKU*unit;
-    const turnover=settled.reduce((s,b)=>s+(+b.stake_dollars||0),0);
-    const roi=turnover>0?netFlat/turnover*100:null;
-    const hit=(w+l)?100*w/(w+l):null;
-    const pct=start>0?netFlat/start*100:0;
-    const lastDay=settled.length?settled.map(b=>b.event_date).filter(Boolean).sort().slice(-1)[0]:null;
-    const through=lastDay||'no settled bets';
+
+    const byTier={}; summary.forEach(r=>{ byTier[r.tier]=r; });
+    const overall=byTier.overall||null;
+    const start = cfg ? +cfg.starting_balance : (overall ? (+overall.balance - +overall.net_dollars) : null);
+    const unit  = cfg ? +cfg.unit_size : null;
+    const lastDay = curve.length ? curve.map(b=>b.slate_date).filter(Boolean).sort().slice(-1)[0] : null;
+    const through = lastDay || 'no settled bets';
     const money=x=>(x<0?'\u2212':'')+'$'+Math.abs(x).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
     const dMoney=x=>(x>=0?'+':'\u2212')+'$'+Math.abs(x).toFixed(2);
 
-    if(!staked.length){
-      const note=`<div class="note">No staked bets yet. The evening chain logs +EV picks here as they\u2019re placed; tracked (\u2212EV) picks are recorded but don\u2019t move the bankroll.</div>`;
-      const empty=`<div class="empty"><b>Bankroll standing by</b>Starting balance ${money(start)} \u00b7 flat 1u = ${money(unit)}. First +EV pick opens the ledger.</div>`;
+    if(!overall || +overall.settled===0){
+      const note=`<div class="note">The bankroll fills in as the strikeout grader settles picks into the brief log. Three tiers track separately \u2014 every qualifying pick (Overall), the top 10 ranked, and the sharpest 5.</div>`;
+      const empty=`<div class="empty"><b>Bankroll standing by</b>${start!=null?`Starting balance ${money(start)}`:'Awaiting config'}${unit!=null?` \u00b7 flat 1u = ${money(unit)}`:''}. First settled pick opens the ledger.</div>`;
       app.innerHTML=shellHTML('Paper Trading','Bankroll',through,note+empty,bankFoot(start,unit),'Bankroll current through');
       wire(); return;
     }
 
+    const netD=+overall.net_dollars, bal=+overall.balance;
+    const pct=(start&&start>0)?netD/start*100:0;
+    const nuO=+overall.net_units, roiO=+overall.roi_per_bet*100;
     const hero=`<div class="bankhero">
-      <div class="blab">Flat balance \u00b7 live</div>
-      <div class="big">${money(balFlat)}</div>
-      <div class="delta"><span class="${cls(netFlat)==='mut'?'':cls(netFlat)}">${dMoney(netFlat)}</span> (${pct>=0?'+':'\u2212'}${Math.abs(pct).toFixed(1)}%) vs ${money(start)} start</div>
-      <div class="kelly"><span>Quarter-Kelly shadow</span><b>${money(balKelly)}</b></div>
+      <div class="blab">Overall balance \u00b7 flat 1u</div>
+      <div class="big">${money(bal)}</div>
+      <div class="delta"><span class="${cls(netD)==='mut'?'':cls(netD)}">${dMoney(netD)}</span> (${pct>=0?'+':'\u2212'}${Math.abs(pct).toFixed(1)}%)${start!=null?` vs ${money(start)} start`:''}</div>
+      <div class="kelly"><span>${overall.settled} settled \u00b7 ${nuO>=0?'+':'\u2212'}${Math.abs(nuO).toFixed(2)}u net</span><b>${roiO>=0?'+':'\u2212'}${Math.abs(roiO).toFixed(1)}% / bet</b></div>
     </div>`;
 
-    const hitVal = hit==null?`<span class="val mut">${dash}</span>`:`<span class="val ${hit>=BREAKEVEN?'pos':'neg'}">${hit.toFixed(1)}<i>%</i></span>`;
-    const roiVal = roi==null?`<span class="val mut">${dash}</span>`:`<span class="val ${cls(roi)}">${roi>=0?'+':'\u2212'}${Math.abs(roi).toFixed(1)}<i>%</i></span>`;
-    const perf=`<section class="tier">
-      <div class="tier-rail"><b>NET</b><span class="sum">\u03A3</span></div>
-      <div class="tier-body">
-        <div class="tier-head"><div class="tier-name">Performance</div><div class="tier-desc">settled \u00b7 staked</div></div>
-        <div class="cume">
-          <div class="stat"><span class="lab">Record</span><span class="val">${settled.length?`${w}${dash}${l}${p?`${dash}${p}p`:''}`:`0${dash}0`}</span></div>
-          <div class="stat"><span class="lab">Hit&nbsp;%</span>${hitVal}<span class="be">need ${BREAKEVEN}%</span></div>
-          <div class="stat"><span class="lab">ROI</span>${roiVal}</div>
-          <div class="stat"><span class="lab">Pending</span><span class="val mut">${pending.length}</span><span class="pend ${pending.length?'live':''}">${pending.length?'awaiting':'graded'}</span></div>
-        </div>
-      </div></section>`;
+    const eq=buildEquity(curve,start);
 
-    const sports={};
-    settled.forEach(b=>{ const k=b.sport||'?'; (sports[k]=sports[k]||[]).push(b); });
-    const sportRows=Object.entries(sports).map(([s,bs])=>{
-      const sw=bs.filter(b=>b.result==='win').length, sl=bs.filter(b=>b.result==='loss').length;
-      const sd=bs.reduce((a,b)=>a+(+b.pnl_dollars||0),0);
-      const res=sd>0?'win':sd<0?'loss':'push';
-      return `<div class="lrow"><span class="lres ${res}"></span><span class="lname">${esc(s.toUpperCase())}</span>
-        <span class="ltag">${sw}${dash}${sl}</span><span class="lpick">${bs.length} bet${bs.length>1?'s':''}</span>
-        <span class="lu ${cls(sd)==='mut'?'flat':cls(sd)}">${dMoney(sd)}</span></div>`;
-    }).join('');
-    const sportCard = sportRows?`<div class="ledger"><div class="ledger-h"><b>By Sport</b><span>net \u00b7 flat</span></div>${sportRows}</div>`:'';
+    const tierCard=(r,rail,name)=>{
+      if(!r) return '';
+      const w=+r.wins,l=+r.losses,p=+r.pushes,settled=+r.settled;
+      const rec=settled?`${w}${dash}${l}${p?`${dash}${p}p`:''}`:`0${dash}0`;
+      const hit=r.hit_pct==null?null:+r.hit_pct;
+      const hitVal=hit==null?`<span class="val mut">${dash}</span>`:`<span class="val ${hit>=BREAKEVEN?'pos':'neg'}">${hit.toFixed(1)}<i>%</i></span>`;
+      const beCls=hit==null?'':(hit>=BREAKEVEN?'clear':'short');
+      const roi=+r.roi_per_bet*100;
+      const roiVal=`<span class="val ${cls(roi)}">${roi>=0?'+':'\u2212'}${Math.abs(roi).toFixed(1)}<i>%</i></span>`;
+      const nu=+r.net_units;
+      const netVal=`<span class="val ${cls(nu)}">${nu>=0?'+':'\u2212'}${Math.abs(nu).toFixed(2)}<i>u</i></span>`;
+      return `<section class="tier">
+        <div class="tier-rail">${rail}</div>
+        <div class="tier-body">
+          <div class="tier-head"><div class="tier-name">${name}</div><div class="tier-desc">bal ${money(+r.balance)}</div></div>
+          <div class="cume">
+            <div class="stat"><span class="lab">Record</span><span class="val">${rec}</span></div>
+            <div class="stat"><span class="lab">Hit&nbsp;%</span>${hitVal}<span class="be ${beCls}">need ${BREAKEVEN}%</span></div>
+            <div class="stat"><span class="lab">ROI</span>${roiVal}</div>
+            <div class="stat"><span class="lab">Net</span>${netVal}</div>
+          </div>
+        </div></section>`;
+    };
+    const tiers=`<div class="scb-list">
+      ${tierCard(byTier.overall,'<b>ALL</b><span class="sum">\u03A3</span>','Overall')}
+      ${tierCard(byTier.top10,'<b>TOP</b><span class="two">10</span>','Top 10')}
+      ${tierCard(byTier.top5,'<b>TOP</b><span>5</span>','Top 5')}</div>`;
 
-    const recent=[...staked].sort((a,b)=>String(b.placed_at||'').localeCompare(String(a.placed_at||''))).slice(0,20);
-    const betRows=recent.map(b=>{
-      const res=b.result||'pending';
-      const side=(b.side||'').charAt(0).toUpperCase();
-      const mk=(b.market||'').toLowerCase();
-      const tag = mk.includes('strikeout')?'K' : mk.includes('shot')?'SH' : mk.includes('ace')?'A' : mk.includes('fault')?'DF' : ((b.sport||'').toString().slice(0,3).toUpperCase()||'\u00b7');
-      const av=b.actual==null?`<span class="lk">${dash}</span>`:`<span class="lk">${+b.actual}</span>`;
-      const u=b.pnl_dollars==null?`<span class="lu flat">\u00b7</span>`:`<span class="lu ${cls(+b.pnl_dollars)==='mut'?'flat':cls(+b.pnl_dollars)}">${dMoney(+b.pnl_dollars)}</span>`;
-      return `<div class="lrow"><span class="lres ${res}"></span><span class="lname">${esc(b.player||b.matchup||'\u2014')}</span>
-        <span class="ltag">${esc(tag)}</span><span class="lpick">${side}${b.line!=null?(+b.line):''}</span>${av}${u}</div>`;
-    }).join('');
-    const betCard=`<div class="ledger"><div class="ledger-h"><b>Recent Bets</b><span>last ${recent.length} staked</span></div>${betRows}</div>`;
-
-    const mid=`<div class="scb-list">${hero}${perf}</div>${sportCard}${betCard}`;
+    const note=`<div class="note">Reads <b>mlb_k_bankroll_summary</b> (tiers) and <b>mlb_k_bankroll_curve</b> (equity) \u2014 both derived live from the strikeout brief log, flat 1u staking. Updates every grade cycle.</div>`;
+    const mid=`${hero}${eq}${note}${tiers}`;
     app.innerHTML=shellHTML('Paper Trading','Bankroll',through,mid,bankFoot(start,unit),'Bankroll current through');
     wire(); return;
   }
 }
 function wcFoot(){ return `<div class="row"><span>CLV harness \u00b7 twice daily</span><span>PrizePicks <b>WORLD CUP</b></span></div>
   <div class="row"><span>Open vs close \u00b7 grades after Jun 11</span><span><a id="signout">Sign out</a></span></div>`; }
+function buildEquity(curve, start){
+  if(!curve || !curve.length) return '';
+  const pts = (start!=null ? [+start] : []).concat(curve.map(b=>+b.balance));
+  const n = pts.length;
+  if(n<2) return '';
+  const W=366, H=96, padX=4, padY=12;
+  const min=Math.min(...pts), max=Math.max(...pts);
+  const span=(max-min)||1;
+  const X=i=> padX + i*(W-2*padX)/(n-1);
+  const Y=v=> padY + (max-v)/span*(H-2*padY);
+  const path = pts.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
+  const area = `${path} L${X(n-1).toFixed(1)} ${(H-padY).toFixed(1)} L${X(0).toFixed(1)} ${(H-padY).toFixed(1)} Z`;
+  const base = (start!=null) ? +start : pts[0];
+  const up = pts[n-1] >= base;
+  const col = up ? 'var(--pos)' : 'var(--neg)';
+  const bY = (base>=min && base<=max) ? Y(base) : null;
+  const baseLine = bY!=null ? `<line x1="${padX}" y1="${bY.toFixed(1)}" x2="${(W-padX).toFixed(1)}" y2="${bY.toFixed(1)}" stroke="var(--line)" stroke-width="1" stroke-dasharray="3 4"/>` : '';
+  const m=v=>'$'+Math.round(v).toLocaleString('en-US');
+  return `<div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px 10px;margin-top:11px">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:9px">
+      <b style="font-family:'Saira Condensed',sans-serif;font-weight:700;font-size:16px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink)">Equity Curve</b>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)">overall \u00b7 ${n-1} settled</span>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;height:96px" preserveAspectRatio="none">
+      ${baseLine}
+      <path d="${area}" fill="${col}" opacity="0.10"/>
+      <path d="${path}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+      <circle cx="${X(n-1).toFixed(1)}" cy="${Y(pts[n-1]).toFixed(1)}" r="3.2" fill="${col}"/>
+    </svg>
+    <div style="display:flex;justify-content:space-between;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)">
+      <span>min ${m(min)}</span><span>peak ${m(max)}</span><span style="color:var(--mute)">now ${m(pts[n-1])}</span>
+    </div>
+  </div>`;
+}
 function bankFoot(start,unit){
   const s = typeof start==='number' ? `$${start.toLocaleString()}` : '\u2014';
   const u = typeof unit==='number' ? `$${unit}` : '\u2014';
