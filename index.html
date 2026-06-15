@@ -138,6 +138,7 @@ const fmtDay = s => { const d=new Date(String(s)+'T00:00:00Z'); return isNaN(d)?
 let view = 'k';      // 'k' | 'tennis' | 'epl' | 'wc' | 'bank'
 let tstat = 'ace';   // 'ace' | 'df'
 let wstat = 'Shots'; // 'Shots' | 'Shots On Target'
+let bankSport = 'k'; // 'k' | 'tennis' — which paper bankroll the Bankroll tab shows
 
 function authScreen(msg, c){
   app.innerHTML = `<div class="auth">
@@ -236,7 +237,10 @@ function shellHTML(metaTitle, metaSub, through, mid, footHTML, throughLabel){
       <div class="subtab ${tstat==='df'?'on':''}" data-stat="df">Double Faults</div></div>`
     : view==='wc' ? `<div class="subtabs">
       <div class="subtab ${wstat==='Shots'?'on':''}" data-stat="Shots">Shots</div>
-      <div class="subtab ${wstat==='Shots On Target'?'on':''}" data-stat="Shots On Target">On Target</div></div>` : '';
+      <div class="subtab ${wstat==='Shots On Target'?'on':''}" data-stat="Shots On Target">On Target</div></div>`
+    : view==='bank' ? `<div class="subtabs">
+      <div class="subtab ${bankSport==='k'?'on':''}" data-sport="k">Strikeout</div>
+      <div class="subtab ${bankSport==='tennis'?'on':''}" data-sport="tennis">Tennis</div></div>` : '';
   return `<header class="scb-hdr">
       <div class="scb-bars"><i></i><i></i><i></i></div>
       <div class="scb-logo">Raya <i>HQ</i></div>
@@ -256,7 +260,7 @@ function shellHTML(metaTitle, metaSub, through, mid, footHTML, throughLabel){
 }
 function wire(){
   app.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{ view=t.dataset.view; board(); });
-  app.querySelectorAll('.subtab').forEach(t=>t.onclick=()=>{ if(view==='wc'){ wstat=t.dataset.stat; } else { tstat=t.dataset.stat; } board(); });
+  app.querySelectorAll('.subtab').forEach(t=>t.onclick=()=>{ if(t.dataset.sport){ bankSport=t.dataset.sport; } else if(view==='wc'){ wstat=t.dataset.stat; } else { tstat=t.dataset.stat; } board(); });
   const so=document.getElementById('signout'); if(so) so.onclick=async()=>{await sb.auth.signOut();route();};
 }
 async function board(){
@@ -403,15 +407,22 @@ async function board(){
 
   // ── Bankroll (reads mlb_k_bankroll_summary + mlb_k_bankroll_curve) ──
   if(view==='bank'){
+    const BK = bankSport==='tennis'
+      ? {sum:'tennis_bankroll_summary', cur:'tennis_bankroll_curve', cfg:2, sport:'Tennis',
+         emptyNote:'The tennis bankroll opens once bets settle. The open game-totals bets are tracking their lines into the close now \u2014 closing-line value grades within a day of each match; win/loss settles when Sackmann posts final games (~3 wk lag).',
+         note:'Reads <b>tennis_bankroll_summary</b> + <b>tennis_bankroll_curve</b> \u2014 derived live from the tennis game-totals paper ledger, flat 1u, EV 4% + Pinnacle-CLV gated. Updates every grade cycle.'}
+      : {sum:'mlb_k_bankroll_summary', cur:'mlb_k_bankroll_curve', cfg:1, sport:'Strikeout',
+         emptyNote:'The bankroll fills in as the strikeout grader settles picks into the brief log. Three tiers track separately \u2014 every qualifying pick (Overall), the top 10 ranked, and the sharpest 5.',
+         note:'Reads <b>mlb_k_bankroll_summary</b> (tiers) and <b>mlb_k_bankroll_curve</b> (equity) \u2014 both derived live from the strikeout brief log, flat 1u staking. Updates every grade cycle.'};
     let summary=[], curve=[], cfg=null;
     try{
-      const sq=await sb.from('mlb_k_bankroll_summary').select('*');
+      const sq=await sb.from(BK.sum).select('*');
       if(sq.error) throw sq.error;
       summary=sq.data||[];
-      const cq=await sb.from('mlb_k_bankroll_curve').select('*').order('bet_no',{ascending:true});
+      const cq=await sb.from(BK.cur).select('*').order('bet_no',{ascending:true});
       if(cq.error) throw cq.error;
       curve=cq.data||[];
-      const bq=await sb.from('raya_bankroll').select('*').eq('id',1).single();
+      const bq=await sb.from('raya_bankroll').select('*').eq('id',BK.cfg).single();
       if(!bq.error) cfg=bq.data;
     }catch(err){
       app.innerHTML=shellHTML('Paper Trading','Bankroll',dash,`<div class="empty"><b>Couldn\u2019t load</b>${esc(err.message||String(err))}</div>`,bankFoot(null,null),'Bankroll current through');
@@ -428,7 +439,7 @@ async function board(){
     const dMoney=x=>(x>=0?'+':'\u2212')+'$'+Math.abs(x).toFixed(2);
 
     if(!overall || +overall.settled===0){
-      const note=`<div class="note">The bankroll fills in as the strikeout grader settles picks into the brief log. Three tiers track separately \u2014 every qualifying pick (Overall), the top 10 ranked, and the sharpest 5.</div>`;
+      const note=`<div class="note">${BK.emptyNote}</div>`;
       const empty=`<div class="empty"><b>Bankroll standing by</b>${start!=null?`Starting balance ${money(start)}`:'Awaiting config'}${unit!=null?` \u00b7 flat 1u = ${money(unit)}`:''}. First settled pick opens the ledger.</div>`;
       app.innerHTML=shellHTML('Paper Trading','Bankroll',through,note+empty,bankFoot(start,unit),'Bankroll current through');
       wire(); return;
@@ -474,7 +485,7 @@ async function board(){
       ${tierCard(byTier.top10,'<b>TOP</b><span class="two">10</span>','Top 10')}
       ${tierCard(byTier.top5,'<b>TOP</b><span>5</span>','Top 5')}</div>`;
 
-    const note=`<div class="note">Reads <b>mlb_k_bankroll_summary</b> (tiers) and <b>mlb_k_bankroll_curve</b> (equity) \u2014 both derived live from the strikeout brief log, flat 1u staking. Updates every grade cycle.</div>`;
+    const note=`<div class="note">${BK.note}</div>`;
     const mid=`${hero}${eq}${note}${tiers}`;
     app.innerHTML=shellHTML('Paper Trading','Bankroll',through,mid,bankFoot(start,unit),'Bankroll current through');
     wire(); return;
