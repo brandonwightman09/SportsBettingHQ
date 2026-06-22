@@ -135,10 +135,9 @@ const dash = '\u2013';
 const fmtUTC = ts => { const d=new Date(ts); return isNaN(d)?String(ts):`${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')} UTC`; };
 const fmtDay = s => { const d=new Date(String(s)+'T00:00:00Z'); return isNaN(d)?String(s):d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'}); };
 
-let view = 'k';      // 'k' | 'tennis' | 'epl' | 'wc' | 'bank'
-let tstat = 'ace';   // 'ace' | 'df'
+let view = 'k';      // 'k' | 'outs' | 'epl' | 'wc' | 'bank'
 let wstat = 'Shots'; // 'Shots' | 'Shots On Target'
-let bankSport = 'k'; // 'k' | 'tennis' — which paper bankroll the Bankroll tab shows
+let bankSport = 'k'; // 'k' | 'outs' — which paper bankroll the Bankroll tab shows
 
 function authScreen(msg, c){
   app.innerHTML = `<div class="auth">
@@ -232,15 +231,12 @@ function ledger(rows, opt){
 }
 function shellHTML(metaTitle, metaSub, through, mid, footHTML, throughLabel){
   throughLabel = throughLabel || 'Results current through';
-  const subtabs = view==='tennis' ? `<div class="subtabs">
-      <div class="subtab ${tstat==='ace'?'on':''}" data-stat="ace">Aces</div>
-      <div class="subtab ${tstat==='df'?'on':''}" data-stat="df">Double Faults</div></div>`
-    : view==='wc' ? `<div class="subtabs">
+  const subtabs = view==='wc' ? `<div class="subtabs">
       <div class="subtab ${wstat==='Shots'?'on':''}" data-stat="Shots">Shots</div>
       <div class="subtab ${wstat==='Shots On Target'?'on':''}" data-stat="Shots On Target">On Target</div></div>`
     : view==='bank' ? `<div class="subtabs">
       <div class="subtab ${bankSport==='k'?'on':''}" data-sport="k">Strikeout</div>
-      <div class="subtab ${bankSport==='tennis'?'on':''}" data-sport="tennis">Tennis</div></div>` : '';
+      <div class="subtab ${bankSport==='outs'?'on':''}" data-sport="outs">Outs</div></div>` : '';
   return `<header class="scb-hdr">
       <div class="scb-bars"><i></i><i></i><i></i></div>
       <div class="scb-logo">Raya <i>HQ</i></div>
@@ -248,7 +244,7 @@ function shellHTML(metaTitle, metaSub, through, mid, footHTML, throughLabel){
     </header>
     <div class="tabs">
       <div class="tab ${view==='k'?'on':''}" data-view="k">Strikeout</div>
-      <div class="tab ${view==='tennis'?'on':''}" data-view="tennis">Tennis</div>
+      <div class="tab ${view==='outs'?'on':''}" data-view="outs">Outs</div>
       <div class="tab ${view==='epl'?'on':''}" data-view="epl">EPL Shots</div>
       <div class="tab ${view==='wc'?'on':''}" data-view="wc">World Cup</div>
       <div class="tab ${view==='bank'?'on':''}" data-view="bank">Bankroll</div>
@@ -260,7 +256,7 @@ function shellHTML(metaTitle, metaSub, through, mid, footHTML, throughLabel){
 }
 function wire(){
   app.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{ view=t.dataset.view; board(); });
-  app.querySelectorAll('.subtab').forEach(t=>t.onclick=()=>{ if(t.dataset.sport){ bankSport=t.dataset.sport; } else if(view==='wc'){ wstat=t.dataset.stat; } else { tstat=t.dataset.stat; } board(); });
+  app.querySelectorAll('.subtab').forEach(t=>t.onclick=()=>{ if(t.dataset.sport){ bankSport=t.dataset.sport; } else if(view==='wc'){ wstat=t.dataset.stat; } board(); });
   const so=document.getElementById('signout'); if(so) so.onclick=async()=>{await sb.auth.signOut();route();};
 }
 async function board(){
@@ -289,27 +285,26 @@ async function board(){
     wire(); return;
   }
 
-  // ── tennis ──
-  if(view==='tennis'){
-    const {data,error}=await sb.from('tennis_serve_brief_log').select('*').eq('stat',tstat);
+  // ── outs (forward-test) ──
+  if(view==='outs'){
+    const {data,error}=await sb.from('mlb_outs_brief_log').select('*');
     if(error){ app.innerHTML=`<main class="scb"><div class="empty"><b>Couldn\u2019t load</b>${esc(error.message)}</div></main>`; return; }
     const rows=data||[];
-    const graded=rows.filter(r=>r.result);
+    const graded=rows.filter(r=>r.result==='win'||r.result==='loss'||r.result==='push');
     const lastDay=graded.length?graded.map(r=>r.slate_date).sort().slice(-1)[0]:null;
     const through=lastDay||'no results yet';
-    const statLab = tstat==='df' ? 'double-fault' : 'ace';
-    const lopt={nameKey:'player_name', actKey:'actual', actUnit:(tstat==='df'?'DF':'A'), lineKey:'pp_line'};
+    const lopt={nameKey:'pitcher_name', actKey:'actual_outs', actUnit:'outs', lineKey:'anchor_line'};
     const tiers=`<div class="scb-list">
-      ${tierEl('<b>TOP</b><span>5</span>','Top 5','Serve brief',rows.filter(r=>r.in_top5),lastDay)}
+      ${tierEl('<b>TOP</b><span>5</span>','Top 5','Big-gap brief',rows.filter(r=>r.in_top5),lastDay)}
       ${tierEl('<b>TOP</b><span class="two">10</span>','Top 10','Next 5 ranked',rows.filter(r=>r.in_top10),lastDay)}
       ${tierEl('<b>ALL</b><span class="sum">\u03A3</span>','Overall','Every qualifying pick',rows,lastDay)}</div>`;
     let mid;
-    if(!rows.length) mid=`<div class="empty"><b>No ${statLab} picks logged yet</b>The tennis brief logs on its next capture. Records fill in once matches settle.</div>`;
-    else if(!graded.length) mid=`<div class="note">${rows.length} ${statLab} picks logged \u00b7 0 graded \u2014 results appear once actuals settle (Sackmann / SofaScore feed).</div>${tiers}${ledger(rows,lopt)}`;
+    if(!rows.length) mid=`<div class="empty"><b>No outs picks logged yet</b>The outs brief logs on its next run. Once games settle, the forward-test record fills in here.</div>`;
+    else if(!graded.length) mid=`<div class="note">${rows.length} picks logged \u00b7 0 graded \u2014 forward-test record appears once the grader settles them against actual outs (IP\u2192outs).</div>${tiers}${ledger(rows,lopt)}`;
     else mid=`${tiers}${ledger(rows,lopt)}`;
-    const foot=`<div class="row"><span>Net units \u00b7 PrizePicks pick\u2019em</span><span>Model <b>wta_serve_v1</b></span></div>
-      <div class="row"><span>${statLab.toUpperCase()} props \u00b7 grading pending</span><span><a id="signout">Sign out</a></span></div>`;
-    app.innerHTML=shellHTML('Evening Scoreboard',(tstat==='df'?'Double-Fault':'Ace')+' Grading',through,mid,foot);
+    const foot=`<div class="row"><span>Net units \u00b7 flat 1u \u00b7 best-book price</span><span>Model <b>outs-oppadj-v1</b></span></div>
+      <div class="row"><span>Forward test \u00b7 confirm at ~30+ graded</span><span><a id="signout">Sign out</a></span></div>`;
+    app.innerHTML=shellHTML('Evening Scoreboard','Pitcher Outs Grading',through,mid,foot);
     wire(); return;
   }
 
@@ -407,10 +402,10 @@ async function board(){
 
   // ── Bankroll (reads mlb_k_bankroll_summary + mlb_k_bankroll_curve) ──
   if(view==='bank'){
-    const BK = bankSport==='tennis'
-      ? {sum:'tennis_bankroll_summary', cur:'tennis_bankroll_curve', cfg:2, sport:'Tennis',
-         emptyNote:'The tennis bankroll opens once bets settle. The open game-totals bets are tracking their lines into the close now \u2014 closing-line value grades within a day of each match; win/loss settles when Sackmann posts final games (~3 wk lag).',
-         note:'Reads <b>tennis_bankroll_summary</b> + <b>tennis_bankroll_curve</b> \u2014 derived live from the tennis game-totals paper ledger, flat 1u, EV 4% + Pinnacle-CLV gated. Updates every grade cycle.'}
+    const BK = bankSport==='outs'
+      ? {sum:'mlb_outs_bankroll_summary', cur:'mlb_outs_bankroll_curve', cfg:3, sport:'Outs',
+         emptyNote:'The outs bankroll opens once the forward test grades its first picks. Picks log daily and settle the morning after games finish, against actual outs (IP\u2192outs).',
+         note:'Reads <b>mlb_outs_bankroll_summary</b> + <b>mlb_outs_bankroll_curve</b> \u2014 derived live from the pitcher-outs forward-test log, flat 1u, ranked by biggest model-vs-line gap. Paper-only until ~30+ graded confirm or kill the edge.'}
       : {sum:'mlb_k_bankroll_summary', cur:'mlb_k_bankroll_curve', cfg:1, sport:'Strikeout',
          emptyNote:'The bankroll fills in as the strikeout grader settles picks into the brief log. Three tiers track separately \u2014 every qualifying pick (Overall), the top 10 ranked, and the sharpest 5.',
          note:'Reads <b>mlb_k_bankroll_summary</b> (tiers) and <b>mlb_k_bankroll_curve</b> (equity) \u2014 both derived live from the strikeout brief log, flat 1u staking. Updates every grade cycle.'};
