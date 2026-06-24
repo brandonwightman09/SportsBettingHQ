@@ -135,9 +135,10 @@ const dash = '\u2013';
 const fmtUTC = ts => { const d=new Date(ts); return isNaN(d)?String(ts):`${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')} UTC`; };
 const fmtDay = s => { const d=new Date(String(s)+'T00:00:00Z'); return isNaN(d)?String(s):d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'}); };
 
-let view = 'k';      // 'k' | 'outs' | 'epl' | 'wc' | 'bank'
+let view = 'k';      // 'k' | 'outs' | 'epl' | 'wc' | 'wnba' | 'bank'
 let wstat = 'Shots'; // 'Shots' | 'Shots On Target'
-let bankSport = 'k'; // 'k' | 'outs' — which paper bankroll the Bankroll tab shows
+let bankSport = 'k'; // 'k' | 'outs' | 'wnba' — which paper bankroll the Bankroll tab shows
+let wnbaStat = 'all'; // 'all' | 'points' | 'rebounds' | 'assists' | 'threes'
 
 function authScreen(msg, c){
   app.innerHTML = `<div class="auth">
@@ -234,9 +235,16 @@ function shellHTML(metaTitle, metaSub, through, mid, footHTML, throughLabel){
   const subtabs = view==='wc' ? `<div class="subtabs">
       <div class="subtab ${wstat==='Shots'?'on':''}" data-stat="Shots">Shots</div>
       <div class="subtab ${wstat==='Shots On Target'?'on':''}" data-stat="Shots On Target">On Target</div></div>`
+    : view==='wnba' ? `<div class="subtabs">
+      <div class="subtab ${wnbaStat==='all'?'on':''}" data-wstat="all">All</div>
+      <div class="subtab ${wnbaStat==='points'?'on':''}" data-wstat="points">Pts</div>
+      <div class="subtab ${wnbaStat==='rebounds'?'on':''}" data-wstat="rebounds">Reb</div>
+      <div class="subtab ${wnbaStat==='assists'?'on':''}" data-wstat="assists">Ast</div>
+      <div class="subtab ${wnbaStat==='threes'?'on':''}" data-wstat="threes">3PM</div></div>`
     : view==='bank' ? `<div class="subtabs">
       <div class="subtab ${bankSport==='k'?'on':''}" data-sport="k">Strikeout</div>
-      <div class="subtab ${bankSport==='outs'?'on':''}" data-sport="outs">Outs</div></div>` : '';
+      <div class="subtab ${bankSport==='outs'?'on':''}" data-sport="outs">Outs</div>
+      <div class="subtab ${bankSport==='wnba'?'on':''}" data-sport="wnba">WNBA</div></div>` : '';
   return `<header class="scb-hdr">
       <div class="scb-bars"><i></i><i></i><i></i></div>
       <div class="scb-logo">Raya <i>HQ</i></div>
@@ -247,6 +255,7 @@ function shellHTML(metaTitle, metaSub, through, mid, footHTML, throughLabel){
       <div class="tab ${view==='outs'?'on':''}" data-view="outs">Outs</div>
       <div class="tab ${view==='epl'?'on':''}" data-view="epl">EPL Shots</div>
       <div class="tab ${view==='wc'?'on':''}" data-view="wc">World Cup</div>
+      <div class="tab ${view==='wnba'?'on':''}" data-view="wnba">WNBA</div>
       <div class="tab ${view==='bank'?'on':''}" data-view="bank">Bankroll</div>
     </div>
     ${subtabs}
@@ -256,7 +265,7 @@ function shellHTML(metaTitle, metaSub, through, mid, footHTML, throughLabel){
 }
 function wire(){
   app.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{ view=t.dataset.view; board(); });
-  app.querySelectorAll('.subtab').forEach(t=>t.onclick=()=>{ if(t.dataset.sport){ bankSport=t.dataset.sport; } else if(view==='wc'){ wstat=t.dataset.stat; } board(); });
+  app.querySelectorAll('.subtab').forEach(t=>t.onclick=()=>{ if(t.dataset.sport){ bankSport=t.dataset.sport; } else if(t.dataset.wstat){ wnbaStat=t.dataset.wstat; } else if(view==='wc'){ wstat=t.dataset.stat; } board(); });
   const so=document.getElementById('signout'); if(so) so.onclick=async()=>{await sb.auth.signOut();route();};
 }
 async function board(){
@@ -400,9 +409,42 @@ async function board(){
     wire(); return;
   }
 
+  // ── WNBA props (forward-test; CLV is the verdict, win rate is noise) ──
+  if(view==='wnba'){
+    const {data,error}=await sb.from('wnba_props_brief_log').select('*');
+    if(error){ app.innerHTML=`<main class="scb"><div class="empty"><b>Couldn\u2019t load</b>${esc(error.message)}</div></main>`; return; }
+    let rows=(data||[]).map(r=>({...r, in_top5:(r.brief_rank!=null&&r.brief_rank<=5), in_top10:(r.brief_rank!=null&&r.brief_rank<=10)}));
+    if(wnbaStat!=='all') rows=rows.filter(r=>r.stat===wnbaStat);
+    const graded=rows.filter(r=>r.result==='win'||r.result==='loss'||r.result==='push');
+    const lastDay=graded.length?graded.map(r=>r.slate_date).sort().slice(-1)[0]:null;
+    const through=lastDay||'no results yet';
+    const lopt={nameKey:'player', actKey:'actual', actUnit:({points:'PTS',rebounds:'REB',assists:'AST',threes:'3PM'}[wnbaStat]||'\u00b7'), lineKey:'line'};
+    const clvRows=rows.filter(r=>r.clv!=null);
+    const clvBeat=clvRows.length?100*clvRows.filter(r=>+r.clv>0).length/clvRows.length:null;
+    const tiers=`<div class="scb-list">
+      ${tierEl('<b>TOP</b><span>5</span>','Top 5','Big-gap brief',rows.filter(r=>r.in_top5),lastDay)}
+      ${tierEl('<b>TOP</b><span class="two">10</span>','Top 10','Next 5 ranked',rows.filter(r=>r.in_top10),lastDay)}
+      ${tierEl('<b>ALL</b><span class="sum">\u03A3</span>','Overall','Every qualifying pick',rows,lastDay)}</div>`;
+    const clvNote = clvBeat==null
+      ? `<div class="note">CLV is the verdict metric \u2014 not win rate. It starts accumulating once close lines are captured (open\u2192close drift). 0 graded with a close line so far.</div>`
+      : `<div class="note">CLV beat-close <b>${clvBeat.toFixed(0)}%</b> (n=${clvRows.length}) \u2014 the verdict metric. &gt;55% = real edge, ~50% = market efficient. Win rate is noise until this stabilizes.</div>`;
+    let mid;
+    if(!rows.length) mid=`<div class="empty"><b>No WNBA picks logged yet</b>The brief logs daily at 9:15 AM ET. Once games settle, the forward-test record fills in here.</div>`;
+    else if(!graded.length) mid=`<div class="note">${rows.length} picks logged \u00b7 0 graded \u2014 forward-test record appears once the grader settles against actual box scores.</div>${tiers}${ledger(rows,lopt)}`;
+    else mid=`${clvNote}${tiers}${ledger(rows,lopt)}`;
+    const foot=`<div class="row"><span>Net units \u00b7 flat 1u \u00b7 open best price</span><span>Model <b>min-anchor-v1</b></span></div>
+      <div class="row"><span>Forward test \u00b7 CLV is the verdict</span><span><a id="signout">Sign out</a></span></div>`;
+    app.innerHTML=shellHTML('Evening Scoreboard','WNBA Props Grading',through,mid,foot);
+    wire(); return;
+  }
+
   // ── Bankroll (reads mlb_k_bankroll_summary + mlb_k_bankroll_curve) ──
   if(view==='bank'){
-    const BK = bankSport==='outs'
+    const BK = bankSport==='wnba'
+      ? {sum:'wnba_bankroll_summary', cur:'wnba_bankroll_curve', cfg:4, sport:'WNBA',
+         emptyNote:'The WNBA bankroll opens once the forward test grades its first picks. Picks log daily at 9:15 AM ET and settle the morning after games finish, against actual box scores.',
+         note:'Reads <b>wnba_bankroll_summary</b> + <b>wnba_bankroll_curve</b> — derived live from the WNBA props forward-test log, flat 1u, ranked by biggest model-vs-line gap. Paper-only; CLV beat-close % is the real verdict, not win rate.'}
+      : bankSport==='outs'
       ? {sum:'mlb_outs_bankroll_summary', cur:'mlb_outs_bankroll_curve', cfg:3, sport:'Outs',
          emptyNote:'The outs bankroll opens once the forward test grades its first picks. Picks log daily and settle the morning after games finish, against actual outs (IP\u2192outs).',
          note:'Reads <b>mlb_outs_bankroll_summary</b> + <b>mlb_outs_bankroll_curve</b> \u2014 derived live from the pitcher-outs forward-test log, flat 1u, ranked by biggest model-vs-line gap. Paper-only until ~30+ graded confirm or kill the edge.'}
